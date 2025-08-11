@@ -22,18 +22,20 @@ const useLocalStorageTasks = (storageKey = "tasks") => {
 		}
 	}, [storageKey]);
 
-	const handleSaveTasks = useCallback(() => {
-		if (!loading) {
-			try {
-				console.log("Saving tasks to localStorage:", tasks);
-				localStorage.setItem(storageKey, JSON.stringify(tasks));
-				setError(null);
-			} catch (err) {
-				console.error("Error saving tasks to localStorage:", err);
-				setError("Failed to save tasks");
+	const handleSaveTasks = useCallback(
+		(tasksToSave) => {
+			if (!loading) {
+				try {
+					localStorage.setItem(storageKey, JSON.stringify(tasksToSave));
+					setError(null);
+				} catch (err) {
+					console.error("Error saving tasks to localStorage:", err);
+					setError("Failed to save tasks");
+				}
 			}
-		}
-	}, [tasks, storageKey, loading]);
+		},
+		[storageKey, loading],
+	);
 
 	// Generate unique ID for new tasks
 	const generateId = useCallback(() => {
@@ -69,18 +71,18 @@ const useLocalStorageTasks = (storageKey = "tasks") => {
 				};
 				return [...prevTasks, newTask];
 			});
-			handleSaveTasks();
+			handleSaveTasks(tasks);
 		},
-		[generateId, handleSaveTasks],
+		[generateId, handleSaveTasks, tasks],
 	);
 
 	// Delete a task
 	const deleteTask = useCallback(
 		(taskId) => {
 			setTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
-			handleSaveTasks();
+			handleSaveTasks(tasks);
 		},
-		[handleSaveTasks],
+		[handleSaveTasks, tasks],
 	);
 
 	// Get a specific task by ID
@@ -94,8 +96,8 @@ const useLocalStorageTasks = (storageKey = "tasks") => {
 	// Clear all tasks
 	const clearAllTasks = useCallback(() => {
 		setTasks([]);
-		handleSaveTasks();
-	}, [handleSaveTasks]);
+		handleSaveTasks(tasks);
+	}, [handleSaveTasks, tasks]);
 
 	// Update multiple tasks at once
 	const updateMultipleTasks = useCallback(
@@ -104,9 +106,9 @@ const useLocalStorageTasks = (storageKey = "tasks") => {
 				const updatedTasks = updateFunction(prevTasks);
 				return Array.isArray(updatedTasks) ? updatedTasks : prevTasks;
 			});
-			handleSaveTasks();
+			handleSaveTasks(tasks);
 		},
-		[handleSaveTasks],
+		[handleSaveTasks, tasks],
 	);
 
 	return {
