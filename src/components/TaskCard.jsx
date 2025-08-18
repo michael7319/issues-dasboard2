@@ -10,12 +10,11 @@ const priorityBorderColors = {
 };
 
 export default function TaskCard({
-  task,
-  onEdit,
-  onDelete,
-  onAddSubtask,
-  onComplete,
-  updateTask,
+	task,
+	onEdit,
+	onDelete,
+	onAddSubtask,
+	onComplete,
 }) {
   const [isCompleted, setIsCompleted] = useState(task.completed || false);
   const [isSubtaskModalOpen, setIsSubtaskModalOpen] = useState(false);
@@ -23,22 +22,22 @@ export default function TaskCard({
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredSubtaskId, setHoveredSubtaskId] = useState(null);
 
-  useEffect(() => {
-    setIsCompleted(task.completed || false);
-  }, [task.completed]);
+	useEffect(() => {
+		setIsCompleted(task.completed || false);
+	}, [task.completed]);
 
-  const main = users.find((u) => Number(u.id) === Number(task.mainAssignee));
-  const supporting = users.filter(
-    (u) =>
-      task.supportingAssignees?.includes(Number(u.id)) &&
-      Number(u.id) !== Number(task.mainAssignee)
-  );
+	const main = users.find((u) => Number(u.id) === Number(task.mainAssignee));
+	const supporting = users.filter(
+		(u) =>
+			task.supportingAssignees?.includes(Number(u.id)) &&
+			Number(u.id) !== Number(task.mainAssignee),
+	);
 
-  const handleToggle = () => {
-    const newStatus = !isCompleted;
-    setIsCompleted(newStatus);
-    onComplete(task.id, newStatus);
-  };
+	const handleToggle = () => {
+		const newStatus = !isCompleted;
+		setIsCompleted(newStatus);
+		onComplete(task.id, newStatus);
+	};
 
   const handleSubtaskToggle = (subtask_id, task_id, sub_complete_state) => {
     if (task.id !== task_id) return;

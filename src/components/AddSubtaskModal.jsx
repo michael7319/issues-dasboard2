@@ -26,11 +26,13 @@ export default function AddSubtaskModal({
     }
   }, [editingSubtask]);
 
-  const handleCheckboxToggle = (userId) => {
-    setSupportingAssignees((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
-    );
-  };
+	const handleCheckboxToggle = (userId) => {
+		setSupportingAssignees((prev) =>
+			prev.includes(userId)
+				? prev.filter((id) => id !== userId)
+				: [...prev, userId],
+		);
+	};
 
   const handleSubmit = () => {
     if (!title.trim() || !mainAssignee) return; // ✅ Basic validation
@@ -52,7 +54,7 @@ export default function AddSubtaskModal({
     onClose();
   };
 
-  if (!isOpen) return null;
+	if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
@@ -61,49 +63,58 @@ export default function AddSubtaskModal({
           {editingSubtask ? 'Edit Subtask' : 'Add Subtask'}
         </h2>
 
-        {/* Title Input */}
-        <input
-          type="text"
-          placeholder="Subtask title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full p-2 mb-4 rounded border border-gray-700 bg-gray-800 text-white"
-        />
+				{/* Title Input */}
+				<input
+					type="text"
+					placeholder="Subtask title"
+					value={title}
+					onChange={(e) => setTitle(e.target.value)}
+					className="w-full p-2 mb-4 rounded border border-gray-700 bg-gray-800 text-white"
+				/>
 
-        {/* Main Assignee Select */}
-        <div className="mb-4">
-          <label className="block mb-1 text-sm font-semibold">Main Assignee</label>
-          <select
-            value={mainAssignee}
-            onChange={(e) => setMainAssignee(Number(e.target.value))}
-            className="w-full p-2 rounded border border-gray-700 bg-gray-800 text-white"
-          >
-            <option value="">-- Select --</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.fullName}
-              </option>
-            ))}
-          </select>
-        </div>
+				{/* Main Assignee Select */}
+				<div className="mb-4">
+					<label
+						htmlFor="main-assignee"
+						className="block mb-1 text-sm font-semibold"
+					>
+						Main Assignee
+					</label>
+					<select
+						id="main-assignee"
+						value={mainAssignee}
+						onChange={(e) => setMainAssignee(Number(e.target.value))}
+						className="w-full p-2 rounded border border-gray-700 bg-gray-800 text-white"
+					>
+						<option value="">-- Select --</option>
+						{users.map((user) => (
+							<option key={user.id} value={user.id}>
+								{user.fullName}
+							</option>
+						))}
+					</select>
+				</div>
 
-        {/* Supporting Assignees */}
-        <div className="mb-4">
-          <label className="block mb-1 text-sm font-semibold">Supporting Assignees</label>
-          <div className="flex flex-wrap gap-2">
-            {users.map((user) => (
-              <label key={user.id} className="flex items-center gap-1 text-sm">
-                <input
-                  type="checkbox"
-                  checked={supportingAssignees.includes(user.id)}
-                  onChange={() => handleCheckboxToggle(user.id)}
-                  className="accent-blue-500"
-                />
-                {user.fullName}
-              </label>
-            ))}
-          </div>
-        </div>
+				{/* Supporting Assignees */}
+				<div className="mb-4">
+					<span className="block mb-1 text-sm font-semibold">
+						Supporting Assignees
+					</span>
+					<div className="flex flex-wrap gap-2">
+						{users.map((user) => (
+							<label key={user.id} className="flex items-center gap-1 text-sm">
+								<input
+									type="checkbox"
+									id={`supporting-${user.id}`}
+									checked={supportingAssignees.includes(user.id)}
+									onChange={() => handleCheckboxToggle(user.id)}
+									className="accent-blue-500"
+								/>
+								<span htmlFor={`supporting-${user.id}`}>{user.fullName}</span>
+							</label>
+						))}
+					</div>
+				</div>
 
         {/* Action Buttons */}
         <div className="flex justify-end gap-2 mt-4">

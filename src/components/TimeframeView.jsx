@@ -53,9 +53,9 @@ export default function TimeframeView() {
     );
   };
 
-  const handleDeleteTask = (taskId) => {
-    setTasks((prev) => prev.filter((task) => task.id !== taskId));
-  };
+	const handleDeleteTask = (taskId) => {
+		deleteTask(taskId);
+	};
 
   const handleMarkComplete = (taskId, completed) => {
     setTasks((prev) =>
@@ -227,17 +227,17 @@ export default function TimeframeView() {
         + Add Task
       </button>
 
-      {/* Add/Edit Modal */}
-      {showModal && (
-        <AddTaskModal
-          onClose={() => {
-            setShowModal(false);
-            setEditingTask(null);
-          }}
-          onAdd={handleAddOrEditTask}
-          taskToEdit={editingTask}
-        />
-      )}
+			{/* Add/Edit Modal */}
+			{showModal && (
+				<AddTaskModal
+					onClose={() => {
+						setShowModal(false);
+						setEditingTask(null);
+					}}
+					onAdd={handleAddOrEditTask}
+					taskToEdit={editingTask}
+				/>
+			)}
 
       {/* Add Subtask Modal */}
       <AddSubtaskModal
