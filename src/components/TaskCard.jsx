@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import users from '../data/users';
-import { Pencil, Trash2, Plus } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import users from "../data/users";
+import { Pencil, Trash2, Plus } from "lucide-react";
+import AddSubtaskModal from "./AddSubtaskModal";
 
 const priorityBorderColors = {
-  High: 'border-red-500 text-red-600',
-  Medium: 'border-yellow-500 text-yellow-600',
-  Low: 'border-green-500 text-green-600',
+  High: "border-red-500 text-red-600",
+  Medium: "border-yellow-500 text-yellow-600",
+  Low: "border-green-500 text-green-600",
 };
 
 export default function TaskCard({
@@ -17,6 +18,10 @@ export default function TaskCard({
   updateTask,
 }) {
   const [isCompleted, setIsCompleted] = useState(task.completed || false);
+  const [isSubtaskModalOpen, setIsSubtaskModalOpen] = useState(false);
+  const [editingSubtask, setEditingSubtask] = useState(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [hoveredSubtaskId, setHoveredSubtaskId] = useState(null);
 
   useEffect(() => {
     setIsCompleted(task.completed || false);
@@ -35,96 +40,139 @@ export default function TaskCard({
     onComplete(task.id, newStatus);
   };
 
-  const handleSubtaskToggle = (index) => {
-    const updatedSubtasks = task.subtasks.map((sub, i) =>
-      i === index ? { ...sub, completed: !sub.completed } : sub
+  const handleSubtaskToggle = (subtask_id, task_id, sub_complete_state) => {
+    if (task.id !== task_id) return;
+
+    const updatedSubtasks = task.subtasks.map((subtask) =>
+      subtask.id === subtask_id
+        ? { ...subtask, completed: !sub_complete_state }
+        : subtask
     );
-    const updatedTask = { ...task, subtasks: updatedSubtasks };
-    updateTask(updatedTask, task.id)
+
+    updateTask({ ...task, subtasks: updatedSubtasks }, task_id);
   };
 
-  const handleEditSubtask = (index) => {
-    const updatedTask = { ...task, editSubtaskIndex: index };
-    onEdit(updatedTask, { type: 'edit-subtask' });
+  const handleEditSubtask = (subtask) => {
+    setEditingSubtask(subtask);
+    setIsSubtaskModalOpen(true);
   };
 
-  const handleDeleteSubtask = (index) => {
-    const updatedSubtasks = task.subtasks.filter((_, i) => i !== index);
-    const updatedTask = { ...task, subtasks: updatedSubtasks };
-    onEdit(updatedTask, { type: 'delete-subtask' });
+  const handleDeleteSubtask = (subtaskId) => {
+    const updatedSubtasks = task.subtasks.filter((st) => st.id !== subtaskId);
+    updateTask({ ...task, subtasks: updatedSubtasks }, task.id);
+  };
+
+  const handleSaveSubtask = (parentTaskId, subtask) => {
+    let updatedSubtasks;
+
+    if (editingSubtask) {
+      updatedSubtasks = task.subtasks.map((st) =>
+        st.id === subtask.id ? subtask : st
+      );
+    } else {
+      updatedSubtasks = [...(task.subtasks || []), subtask];
+    }
+
+    updateTask({ ...task, subtasks: updatedSubtasks }, parentTaskId);
+    setEditingSubtask(null);
+  };
+
+  // 🔹 Two-letter initials
+  const getUserInitials = (user) => {
+    if (!user) return "";
+    const parts = user.fullName.trim().split(" ");
+    return parts.length > 1
+      ? (parts[0][0] + parts[1][0]).toUpperCase()
+      : parts[0].slice(0, 2).toUpperCase();
+  };
+
+  const renderUserTag = (user, isMain = false) => {
+    if (!user) return null;
+    return (
+      <span
+        key={user.id}
+        className={`w-4 h-4 flex items-center justify-center rounded-full font-bold text-[9px] shadow 
+        ${isMain ? "bg-blue-600 text-white" : "bg-green-500 text-white"}`}
+      >
+        {getUserInitials(user)}
+      </span>
+    );
   };
 
   return (
-    <div className="p-4 border border-gray-700 dark:border-gray-500 bg-gray-900 text-white rounded-xl space-y-3 shadow-sm">
+    <div className="p-2 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px]">
       {/* Main Task Block */}
-      <div className="p-3 border border-gray-600 rounded-lg bg-gray-800 text-sm space-y-3 relative">
-        <div className="mb-1">
-          <h3 className="text-base font-semibold">{task.title}</h3>
-          <p className="text-sm text-gray-300">{task.description}</p>
+      <div
+        className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <div>
+          <h3 className="text-sm font-semibold">{task.title}</h3>
+          <p className="text-xs text-gray-300">{task.description}</p>
         </div>
 
-        <div className="absolute top-2 right-2 flex gap-2">
+        {/* Hover Expanding Assignees */}
+        {(main || supporting.length > 0) && (
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-in-out 
+              ${isHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"}`}
+          >
+            <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
+              {main && renderUserTag(main, true)}
+              {supporting.length > 0 && supporting.map((u) => renderUserTag(u))}
+            </div>
+          </div>
+        )}
+
+        {/* Edit/Delete Buttons */}
+        <div className="absolute flex gap-1 top-1 right-1 z-30">
           <button onClick={() => onEdit(task)} title="Edit">
-            <Pencil size={16} className="text-gray-400 hover:text-blue-400" />
+            <Pencil size={14} className="text-gray-400 hover:text-blue-400" />
           </button>
           <button onClick={() => onDelete(task.id)} title="Delete">
-            <Trash2 size={16} className="text-gray-400 hover:text-red-400" />
+            <Trash2 size={14} className="text-gray-400 hover:text-red-400" />
           </button>
         </div>
 
-        <div className="flex justify-between items-end pt-1">
-          <div className="flex flex-col items-start gap-2">
+        <div className="flex items-end justify-between pt-1">
+          <div className="flex flex-col items-start gap-1">
             <span
-              className={`text-xs font-semibold px-2 py-1 rounded-full border ${
-                priorityBorderColors[task.priority] || 'border-gray-400 text-gray-200'
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                priorityBorderColors[task.priority] ||
+                "border-gray-400 text-gray-200"
               }`}
             >
               {task.priority}
             </span>
 
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <label className="flex items-center gap-1 text-xs cursor-pointer">
               <input
                 type="checkbox"
                 checked={isCompleted}
                 onChange={handleToggle}
-                className="accent-green-500 w-4 h-4"
+                className="w-3.5 h-3.5 accent-green-500"
               />
-              <span className={isCompleted ? 'text-green-400' : 'text-yellow-400'}>
-                {isCompleted ? 'Task Complete' : 'Pending'}
+              <span
+                className={isCompleted ? "text-green-400" : "text-yellow-400"}
+              >
+                {isCompleted ? "Complete" : "Pending"}
               </span>
             </label>
           </div>
 
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex flex-wrap justify-end gap-1">
-              {main && (
-                <span
-                  title={main.fullName}
-                  className="text-xs font-semibold bg-blue-500 text-white px-2 py-1 rounded-full shadow"
-                >
-                  {main.initials}
-                </span>
-              )}
-              {supporting.map((user) => (
-                <span
-                  key={user.id}
-                  title={user.fullName}
-                  className="text-xs bg-yellow-400 text-black px-2 py-1 rounded-full"
-                >
-                  {user.initials}
-                </span>
-              ))}
-            </div>
-
+          {/* Add Subtask Button */}
+          <div className="relative z-30 mt-1 flex justify-end">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onAddSubtask(task);
+                setEditingSubtask(null);
+                setIsSubtaskModalOpen(true);
               }}
-              className="p-1 text-white bg-blue-600 hover:bg-blue-700 rounded-full"
+              className="p-1 text-white bg-blue-600 rounded-full hover:bg-blue-700"
               title="Add Subtask"
             >
-              <Plus size={16} />
+              <Plus size={14} />
             </button>
           </div>
         </div>
@@ -132,77 +180,98 @@ export default function TaskCard({
 
       {/* Subtasks */}
       {task.subtasks?.length > 0 &&
-        task.subtasks.map((sub, idx) => {
+        task.subtasks.map((sub) => {
           const mainSubAssignee = users.find((u) => u.id === sub.mainAssignee);
           const supportingSubAssignees = users.filter(
-            (u) => sub.supportingAssignees?.includes(u.id) && u.id !== sub.mainAssignee
+            (u) =>
+              sub.supportingAssignees?.includes(u.id) &&
+              u.id !== sub.mainAssignee
           );
+
+          const isSubHovered = hoveredSubtaskId === sub.id;
 
           return (
             <div
-              key={idx}
-              className="p-3 border border-gray-600 rounded-lg bg-gray-800 text-sm relative"
+              key={sub.id}
+              className="relative p-2 text-xs bg-gray-800 border border-gray-600 rounded-md"
+              onMouseEnter={() => setHoveredSubtaskId(sub.id)}
+              onMouseLeave={() => setHoveredSubtaskId(null)}
             >
-              <div className="absolute top-1 right-1 flex gap-2">
+              {/* Expanding Assignees */}
+              {(mainSubAssignee || supportingSubAssignees.length > 0) && (
+                <div
+                  className={`overflow-hidden transition-all duration-300 ease-in-out 
+                    ${
+                      isSubHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"
+                    }`}
+                >
+                  <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
+                    {mainSubAssignee && renderUserTag(mainSubAssignee, true)}
+                    {supportingSubAssignees.length > 0 &&
+                      supportingSubAssignees.map((u) => renderUserTag(u))}
+                  </div>
+                </div>
+              )}
+
+              {/* Edit/Delete Subtask */}
+              <div className="absolute flex gap-1 top-1 right-1 z-30">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleEditSubtask(idx);
+                    handleEditSubtask(sub);
                   }}
                   title="Edit Subtask"
                 >
-                  <Pencil size={14} className="text-gray-400 hover:text-blue-400" />
+                  <Pencil
+                    size={12}
+                    className="text-gray-400 hover:text-blue-400"
+                  />
                 </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDeleteSubtask(idx);
+                    handleDeleteSubtask(sub.id);
                   }}
                   title="Delete Subtask"
                 >
-                  <Trash2 size={14} className="text-gray-400 hover:text-red-400" />
+                  <Trash2
+                    size={12}
+                    className="text-gray-400 hover:text-red-400"
+                  />
                 </button>
               </div>
 
-              <div className="pt-2 space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer pr-10">
+              <div className="pt-1 space-y-1">
+                <label className="flex items-center gap-1 pr-8 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={sub.completed}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      handleSubtaskToggle(idx);
-                    }}
-                    className="accent-green-500 w-4 h-4"
+                    onChange={() =>
+                      handleSubtaskToggle(sub.id, task.id, sub.completed)
+                    }
+                    className="w-3.5 h-3.5 accent-green-500"
                   />
-                  <span className={sub.completed ? 'line-through text-gray-400' : ''}>
+                  <span
+                    className={
+                      sub.completed ? "line-through text-gray-400" : ""
+                    }
+                  >
                     {sub.title}
                   </span>
                 </label>
-
-                <div className="flex gap-1 flex-wrap justify-end">
-                  {mainSubAssignee && (
-                    <span
-                      title={mainSubAssignee.fullName}
-                      className="text-xs font-semibold bg-blue-500 text-white px-2 py-1 rounded-full shadow"
-                    >
-                      {mainSubAssignee.initials}
-                    </span>
-                  )}
-                  {supportingSubAssignees.map((user) => (
-                    <span
-                      key={user.id}
-                      title={user.fullName}
-                      className="text-xs bg-yellow-400 text-black px-2 py-1 rounded-full"
-                    >
-                      {user.initials}
-                    </span>
-                  ))}
-                </div>
               </div>
             </div>
           );
         })}
+
+      {/* Subtask Modal */}
+      <AddSubtaskModal
+        isOpen={isSubtaskModalOpen}
+        onClose={() => setIsSubtaskModalOpen(false)}
+        onAdd={handleSaveSubtask}
+        parentTask={task}
+        editingSubtask={editingSubtask}
+      />
     </div>
   );
 }

@@ -1,10 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import users from '../data/users';
 
-export default function AddSubtaskModal({ isOpen, onClose, onAdd, parentTask }) {
+export default function AddSubtaskModal({ 
+  isOpen, 
+  onClose, 
+  onAdd, 
+  onUpdate, 
+  parentTask, 
+  editingSubtask = null 
+}) {
   const [title, setTitle] = useState('');
   const [mainAssignee, setMainAssignee] = useState('');
   const [supportingAssignees, setSupportingAssignees] = useState([]);
+
+  // Prefill fields if editing
+  useEffect(() => {
+    if (editingSubtask) {
+      setTitle(editingSubtask.title || '');
+      setMainAssignee(editingSubtask.mainAssignee || '');
+      setSupportingAssignees(editingSubtask.supportingAssignees || []);
+    } else {
+      setTitle('');
+      setMainAssignee('');
+      setSupportingAssignees([]);
+    }
+  }, [editingSubtask]);
 
   const handleCheckboxToggle = (userId) => {
     setSupportingAssignees((prev) =>
@@ -13,20 +33,22 @@ export default function AddSubtaskModal({ isOpen, onClose, onAdd, parentTask }) 
   };
 
   const handleSubmit = () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !mainAssignee) return; // ✅ Basic validation
 
-    const newSubtask = {
-      id: Date.now(),
+    const subtaskData = {
+      id: editingSubtask ? editingSubtask.id : Date.now(),
       title,
-      completed: false,
+      completed: editingSubtask ? editingSubtask.completed : false,
       mainAssignee,
       supportingAssignees,
     };
 
-    onAdd(parentTask.id, newSubtask);
-    setTitle('');
-    setMainAssignee('');
-    setSupportingAssignees([]);
+    if (editingSubtask) {
+      onUpdate(parentTask.id, subtaskData);
+    } else {
+      onAdd(parentTask.id, subtaskData);
+    }
+
     onClose();
   };
 
@@ -35,7 +57,9 @@ export default function AddSubtaskModal({ isOpen, onClose, onAdd, parentTask }) 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-gray-900 text-white w-full max-w-md p-6 rounded-lg shadow-lg">
-        <h2 className="text-xl font-bold mb-4">Add Subtask</h2>
+        <h2 className="text-xl font-bold mb-4">
+          {editingSubtask ? 'Edit Subtask' : 'Add Subtask'}
+        </h2>
 
         {/* Title Input */}
         <input
@@ -93,7 +117,7 @@ export default function AddSubtaskModal({ isOpen, onClose, onAdd, parentTask }) 
             onClick={handleSubmit}
             className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
           >
-            Add
+            {editingSubtask ? 'Update' : 'Add'}
           </button>
         </div>
       </div>
