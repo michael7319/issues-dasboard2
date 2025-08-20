@@ -10,11 +10,13 @@ const priorityBorderColors = {
 };
 
 export default function TaskCard({
-	task,
-	onEdit,
-	onDelete,
-	onAddSubtask,
-	onComplete,
+  task,
+  onEdit,
+  onDelete,
+  onAddSubtask,
+  onComplete,
+  onDeleteSubtask,
+  onUpdateSubtask,
 }) {
   const [isCompleted, setIsCompleted] = useState(task.completed || false);
   const [isSubtaskModalOpen, setIsSubtaskModalOpen] = useState(false);
@@ -22,61 +24,45 @@ export default function TaskCard({
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredSubtaskId, setHoveredSubtaskId] = useState(null);
 
-	useEffect(() => {
-		setIsCompleted(task.completed || false);
-	}, [task.completed]);
+  useEffect(() => {
+    setIsCompleted(task.completed || false);
+  }, [task.completed]);
 
-	const main = users.find((u) => Number(u.id) === Number(task.mainAssignee));
-	const supporting = users.filter(
-		(u) =>
-			task.supportingAssignees?.includes(Number(u.id)) &&
-			Number(u.id) !== Number(task.mainAssignee),
-	);
+  const main = users.find((u) => Number(u.id) === Number(task.mainAssignee));
+  const supporting = users.filter(
+    (u) =>
+      task.supportingAssignees?.includes(Number(u.id)) &&
+      Number(u.id) !== Number(task.mainAssignee)
+  );
 
-	const handleToggle = () => {
-		const newStatus = !isCompleted;
-		setIsCompleted(newStatus);
-		onComplete(task.id, newStatus);
-	};
-
-  const handleSubtaskToggle = (subtask_id, task_id, sub_complete_state) => {
-    if (task.id !== task_id) return;
-
-    const updatedSubtasks = task.subtasks.map((subtask) =>
-      subtask.id === subtask_id
-        ? { ...subtask, completed: !sub_complete_state }
-        : subtask
-    );
-
-    updateTask({ ...task, subtasks: updatedSubtasks }, task_id);
+  const handleToggle = (e) => {
+    e.stopPropagation();
+    const newStatus = !isCompleted;
+    setIsCompleted(newStatus);
+    onComplete(task.id, newStatus);
   };
 
-  const handleEditSubtask = (subtask) => {
+  const handleSubtaskToggle = (e, subtaskId, completed) => {
+    e.stopPropagation();
+    onUpdateSubtask(task.id, subtaskId, { completed: !completed });
+  };
+
+  const handleEditSubtask = (e, subtask) => {
+    e.stopPropagation();
     setEditingSubtask(subtask);
     setIsSubtaskModalOpen(true);
   };
 
-  const handleDeleteSubtask = (subtaskId) => {
-    const updatedSubtasks = task.subtasks.filter((st) => st.id !== subtaskId);
-    updateTask({ ...task, subtasks: updatedSubtasks }, task.id);
+  const handleDeleteSubtask = (e, subtaskId) => {
+    e.stopPropagation();
+    onDeleteSubtask(task.id, subtaskId);
   };
 
   const handleSaveSubtask = (parentTaskId, subtask) => {
-    let updatedSubtasks;
-
-    if (editingSubtask) {
-      updatedSubtasks = task.subtasks.map((st) =>
-        st.id === subtask.id ? subtask : st
-      );
-    } else {
-      updatedSubtasks = [...(task.subtasks || []), subtask];
-    }
-
-    updateTask({ ...task, subtasks: updatedSubtasks }, parentTaskId);
+    onUpdateSubtask(parentTaskId, subtask.id, subtask);
     setEditingSubtask(null);
   };
 
-  // 🔹 Two-letter initials
   const getUserInitials = (user) => {
     if (!user) return "";
     const parts = user.fullName.trim().split(" ");
@@ -165,7 +151,7 @@ export default function TaskCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setEditingSubtask(null);
+                setEditingSubtask(null); // ✅ reset to add mode
                 setIsSubtaskModalOpen(true);
               }}
               className="p-1 text-white bg-blue-600 rounded-full hover:bg-blue-700"
@@ -201,7 +187,9 @@ export default function TaskCard({
                 <div
                   className={`overflow-hidden transition-all duration-300 ease-in-out 
                     ${
-                      isSubHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"
+                      isSubHovered
+                        ? "max-h-16 mt-2 opacity-100"
+                        : "max-h-0 opacity-0"
                     }`}
                 >
                   <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
@@ -215,10 +203,7 @@ export default function TaskCard({
               {/* Edit/Delete Subtask */}
               <div className="absolute flex gap-1 top-1 right-1 z-30">
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEditSubtask(sub);
-                  }}
+                  onClick={(e) => handleEditSubtask(e, sub)}
                   title="Edit Subtask"
                 >
                   <Pencil
@@ -227,10 +212,7 @@ export default function TaskCard({
                   />
                 </button>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteSubtask(sub.id);
-                  }}
+                  onClick={(e) => handleDeleteSubtask(e, sub.id)}
                   title="Delete Subtask"
                 >
                   <Trash2
@@ -245,8 +227,8 @@ export default function TaskCard({
                   <input
                     type="checkbox"
                     checked={sub.completed}
-                    onChange={() =>
-                      handleSubtaskToggle(sub.id, task.id, sub.completed)
+                    onChange={(e) =>
+                      handleSubtaskToggle(e, sub.id, sub.completed)
                     }
                     className="w-3.5 h-3.5 accent-green-500"
                   />
@@ -266,8 +248,16 @@ export default function TaskCard({
       {/* Subtask Modal */}
       <AddSubtaskModal
         isOpen={isSubtaskModalOpen}
-        onClose={() => setIsSubtaskModalOpen(false)}
-        onAdd={handleSaveSubtask}
+        onClose={() => {
+          setIsSubtaskModalOpen(false);
+          setEditingSubtask(null);
+        }}
+        onAdd={(parentTaskId, subtask) => {
+          onAddSubtask(parentTaskId, subtask);
+        }}
+        onUpdate={(parentTaskId, subtask) => {
+          handleSaveSubtask(parentTaskId, subtask);
+        }}
         parentTask={task}
         editingSubtask={editingSubtask}
       />

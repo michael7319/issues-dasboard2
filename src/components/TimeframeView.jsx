@@ -13,6 +13,7 @@ export default function TimeframeView() {
 	const [showModal, setShowModal] = useState(false);
 	const [editingTask, setEditingTask] = useState(null);
 
+	// ✅ Subtask modal state
 	const [showSubtaskModal, setShowSubtaskModal] = useState(false);
 	const [taskToSubtask, setTaskToSubtask] = useState(null);
 
@@ -53,8 +54,39 @@ export default function TimeframeView() {
 		);
 	};
 
+	// ✅ Delete main task
 	const handleDeleteTask = (taskId) => {
-		deleteTask(taskId);
+		setTasks((prev) => prev.filter((task) => task.id !== taskId));
+	};
+
+	// ✅ Delete subtask
+	const handleDeleteSubtask = (taskId, subtaskId) => {
+		setTasks((prev) =>
+			prev.map((task) =>
+				task.id === taskId
+					? {
+							...task,
+							subtasks: task.subtasks.filter((s) => s.id !== subtaskId),
+						}
+					: task,
+			),
+		);
+	};
+
+	// ✅ Update subtask
+	const handleUpdateSubtask = (taskId, subtaskId, updates) => {
+		setTasks((prev) =>
+			prev.map((task) =>
+				task.id === taskId
+					? {
+							...task,
+							subtasks: task.subtasks.map((s) =>
+								s.id === subtaskId ? { ...s, ...updates } : s,
+							),
+						}
+					: task,
+			),
+		);
 	};
 
 	const handleMarkComplete = (taskId, completed) => {
@@ -65,10 +97,10 @@ export default function TimeframeView() {
 
 	const timeframes = ["all", "daily", "weekly", "project", "custom"];
 	const groups = { daily: [], weekly: [], project: [], custom: [] };
-	for (const task of tasks) {
+	tasks.forEach((task) => {
 		if (groups[task.type]) groups[task.type].push(task);
 		else groups.custom.push(task);
-	}
+	});
 
 	const getIcon = (type) => {
 		switch (type) {
@@ -116,9 +148,9 @@ export default function TimeframeView() {
 
 	// Tighter spacing values
 	const gapClass = {
-		tight: "gap-[2px]", // almost no space
-		medium: "gap-[6px]", // small but visible
-		loose: "gap-[12px]", // still compact
+		tight: "gap-[2px]",
+		medium: "gap-[6px]",
+		loose: "gap-[12px]",
 	};
 
 	return (
@@ -128,7 +160,6 @@ export default function TimeframeView() {
 				<div className="flex gap-2 overflow-x-auto">
 					{timeframes.map((tf) => (
 						<button
-							type="button"
 							key={tf}
 							onClick={() => setSelectedTimeframe(tf)}
 							className={tabClass(tf)}
@@ -223,6 +254,8 @@ export default function TimeframeView() {
 												setTaskToSubtask(task);
 												setShowSubtaskModal(true);
 											}}
+											onDeleteSubtask={handleDeleteSubtask}
+											onUpdateSubtask={handleUpdateSubtask}
 										/>
 									</div>
 								))}
@@ -236,7 +269,6 @@ export default function TimeframeView() {
 
 			{/* Global Add Task Button */}
 			<button
-				type="button"
 				onClick={() => {
 					setEditingTask(null);
 					setShowModal(true);
@@ -246,7 +278,7 @@ export default function TimeframeView() {
 				+ Add Task
 			</button>
 
-			{/* Add/Edit Modal */}
+			{/* Add/Edit Task Modal */}
 			{showModal && (
 				<AddTaskModal
 					onClose={() => {
@@ -258,21 +290,24 @@ export default function TimeframeView() {
 				/>
 			)}
 
-			{/* Add Subtask Modal */}
-			<AddSubtaskModal
-				isOpen={showSubtaskModal}
-				onClose={() => setShowSubtaskModal(false)}
-				onAdd={(taskId, subtask) => {
-					setTasks((prev) =>
-						prev.map((task) =>
-							task.id === taskId
-								? { ...task, subtasks: [...(task.subtasks || []), subtask] }
-								: task,
-						),
-					);
-				}}
-				parentTask={taskToSubtask}
-			/>
+			{/* ✅ The only Add Subtask Modal */}
+			{showSubtaskModal && taskToSubtask && (
+				<AddSubtaskModal
+					isOpen={showSubtaskModal}
+					onClose={() => setShowSubtaskModal(false)}
+					onAdd={(taskId, subtask) => {
+						setTasks((prev) =>
+							prev.map((task) =>
+								task.id === taskId
+									? { ...task, subtasks: [...(task.subtasks || []), subtask] }
+									: task,
+							),
+						);
+						setShowSubtaskModal(false);
+					}}
+					parentTask={taskToSubtask}
+				/>
+			)}
 		</div>
 	);
 }
