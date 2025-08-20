@@ -97,10 +97,10 @@ export default function TimeframeView() {
 
 	const timeframes = ["all", "daily", "weekly", "project", "custom"];
 	const groups = { daily: [], weekly: [], project: [], custom: [] };
-	tasks.forEach((task) => {
+	for (const task of tasks) {
 		if (groups[task.type]) groups[task.type].push(task);
 		else groups.custom.push(task);
-	});
+	}
 
 	const getIcon = (type) => {
 		switch (type) {
@@ -161,6 +161,7 @@ export default function TimeframeView() {
 					{timeframes.map((tf) => (
 						<button
 							key={tf}
+							type="button"
 							onClick={() => setSelectedTimeframe(tf)}
 							className={tabClass(tf)}
 						>
@@ -269,6 +270,7 @@ export default function TimeframeView() {
 
 			{/* Global Add Task Button */}
 			<button
+				type="button"
 				onClick={() => {
 					setEditingTask(null);
 					setShowModal(true);
