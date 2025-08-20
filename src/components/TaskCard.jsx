@@ -76,8 +76,9 @@ export default function TaskCard({
     return (
       <span
         key={user.id}
-        className={`w-4 h-4 flex items-center justify-center rounded-full font-bold text-[9px] shadow 
-        ${isMain ? "bg-blue-600 text-white" : "bg-green-500 text-white"}`}
+        className={`w-4 h-4 flex items-center justify-center rounded-full font-bold text-[9px] shadow ${
+          isMain ? "bg-blue-600 text-white" : "bg-green-500 text-white"
+        }`}
       >
         {getUserInitials(user)}
       </span>
@@ -100,12 +101,14 @@ export default function TaskCard({
         {/* Hover Expanding Assignees */}
         {(main || supporting.length > 0) && (
           <div
-            className={`overflow-hidden transition-all duration-300 ease-in-out 
-              ${isHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"}`}
+            className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              isHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"
+            }`}
           >
             <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
               {main && renderUserTag(main, true)}
-              {supporting.length > 0 && supporting.map((u) => renderUserTag(u))}
+              {supporting.length > 0 &&
+                supporting.map((u) => renderUserTag(u))}
             </div>
           </div>
         )}
@@ -130,7 +133,6 @@ export default function TaskCard({
             >
               {task.priority}
             </span>
-
             <label className="flex items-center gap-1 text-xs cursor-pointer">
               <input
                 type="checkbox"
@@ -151,7 +153,7 @@ export default function TaskCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setEditingSubtask(null); // ✅ reset to add mode
+                setEditingSubtask(null); // ✅ force add mode only
                 setIsSubtaskModalOpen(true);
               }}
               className="p-1 text-white bg-blue-600 rounded-full hover:bg-blue-700"
@@ -172,7 +174,6 @@ export default function TaskCard({
               sub.supportingAssignees?.includes(u.id) &&
               u.id !== sub.mainAssignee
           );
-
           const isSubHovered = hoveredSubtaskId === sub.id;
 
           return (
@@ -185,12 +186,9 @@ export default function TaskCard({
               {/* Expanding Assignees */}
               {(mainSubAssignee || supportingSubAssignees.length > 0) && (
                 <div
-                  className={`overflow-hidden transition-all duration-300 ease-in-out 
-                    ${
-                      isSubHovered
-                        ? "max-h-16 mt-2 opacity-100"
-                        : "max-h-0 opacity-0"
-                    }`}
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    isSubHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"
+                  }`}
                 >
                   <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
                     {mainSubAssignee && renderUserTag(mainSubAssignee, true)}
@@ -233,9 +231,7 @@ export default function TaskCard({
                     className="w-3.5 h-3.5 accent-green-500"
                   />
                   <span
-                    className={
-                      sub.completed ? "line-through text-gray-400" : ""
-                    }
+                    className={sub.completed ? "line-through text-gray-400" : ""}
                   >
                     {sub.title}
                   </span>
@@ -246,7 +242,7 @@ export default function TaskCard({
         })}
 
       {/* Subtask Modal */}
-      <AddSubtaskModal
+      {/* <AddSubtaskModal
         isOpen={isSubtaskModalOpen}
         onClose={() => {
           setIsSubtaskModalOpen(false);
@@ -260,7 +256,7 @@ export default function TaskCard({
         }}
         parentTask={task}
         editingSubtask={editingSubtask}
-      />
+      /> */}
     </div>
   );
 }
