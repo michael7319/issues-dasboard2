@@ -10,7 +10,7 @@ export default function TimeframeView() {
   const [selectedTimeframe, setSelectedTimeframe] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
-  const [showModal, setShowModal] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
 
   // ✅ Subtask modal state
@@ -40,12 +40,15 @@ export default function TimeframeView() {
       if (exists) return prev.map((t) => (t.id === newTask.id ? newTask : t));
       return [newTask, ...prev];
     });
+
+    // Close the modal after adding/editing and reset editing state
     setEditingTask(null);
+    setIsModalOpen(false);
   };
 
   const handleEditTask = (task) => {
     setEditingTask(task);
-    setShowModal(true);
+    setIsModalOpen(true);
   };
 
   const handleUpdateTask = (updatedTask, task_id) => {
@@ -271,24 +274,23 @@ export default function TimeframeView() {
       <button
         onClick={() => {
           setEditingTask(null);
-          setShowModal(true);
+          setIsModalOpen(true);
         }}
         className="fixed z-50 px-6 py-3 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700"
       >
         + Add Task
       </button>
 
-      {/* Add/Edit Task Modal */}
-      {showModal && (
-        <AddTaskModal
-          onClose={() => {
-            setShowModal(false);
-            setEditingTask(null);
-          }}
-          onAdd={handleAddOrEditTask}
-          taskToEdit={editingTask}
-        />
-      )}
+      {/* ✅ Add/Edit Task Modal (shadcn/Dialog version) */}
+      <AddTaskModal
+        open={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTask(null);
+        }}
+        onAdd={handleAddOrEditTask}
+        taskToEdit={editingTask}
+      />
 
       {/* ✅ The only Add Subtask Modal */}
       {showSubtaskModal && taskToSubtask && (

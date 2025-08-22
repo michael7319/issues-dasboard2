@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import users from "../data/users";
 import { Pencil, Trash2, Plus } from "lucide-react";
-import AddSubtaskModal from "./AddSubtaskModal";
 
 const priorityBorderColors = {
   High: "border-red-500 text-red-600",
@@ -14,13 +13,12 @@ export default function TaskCard({
   onEdit,
   onDelete,
   onAddSubtask,
+  onEditSubtask,
   onComplete,
   onDeleteSubtask,
   onUpdateSubtask,
 }) {
   const [isCompleted, setIsCompleted] = useState(task.completed || false);
-  const [isSubtaskModalOpen, setIsSubtaskModalOpen] = useState(false);
-  const [editingSubtask, setEditingSubtask] = useState(null);
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredSubtaskId, setHoveredSubtaskId] = useState(null);
 
@@ -49,8 +47,7 @@ export default function TaskCard({
 
   const handleEditSubtask = (e, subtask) => {
     e.stopPropagation();
-    setEditingSubtask(subtask);
-    setIsSubtaskModalOpen(true);
+    onEditSubtask(task, subtask);
   };
 
   const handleDeleteSubtask = (e, subtaskId) => {
@@ -58,9 +55,9 @@ export default function TaskCard({
     onDeleteSubtask(task.id, subtaskId);
   };
 
-  const handleSaveSubtask = (parentTaskId, subtask) => {
-    onUpdateSubtask(parentTaskId, subtask.id, subtask);
-    setEditingSubtask(null);
+  const handleAddSubtaskClick = (e) => {
+    e.stopPropagation();
+    onAddSubtask(task);
   };
 
   const getUserInitials = (user) => {
@@ -76,9 +73,8 @@ export default function TaskCard({
     return (
       <span
         key={user.id}
-        className={`w-4 h-4 flex items-center justify-center rounded-full font-bold text-[9px] shadow ${
-          isMain ? "bg-blue-600 text-white" : "bg-green-500 text-white"
-        }`}
+        className={`w-4 h-4 flex items-center justify-center rounded-full font-bold text-[9px] shadow 
+          ${isMain ? "bg-blue-600 text-white" : "bg-green-500 text-white"}`}
       >
         {getUserInitials(user)}
       </span>
@@ -93,9 +89,14 @@ export default function TaskCard({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
+        {/* Title & Description */}
         <div>
           <h3 className="text-sm font-semibold">{task.title}</h3>
-          <p className="text-xs text-gray-300">{task.description}</p>
+          {task.description && (
+            <p className="text-xs text-gray-300 line-clamp-2">
+              {task.description}
+            </p>
+          )}
         </div>
 
         {/* Hover Expanding Assignees */}
@@ -107,22 +108,30 @@ export default function TaskCard({
           >
             <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
               {main && renderUserTag(main, true)}
-              {supporting.length > 0 &&
-                supporting.map((u) => renderUserTag(u))}
+              {supporting.map((u) => renderUserTag(u))}
             </div>
           </div>
         )}
 
         {/* Edit/Delete Buttons */}
         <div className="absolute flex gap-1 top-1 right-1 z-30">
-          <button onClick={() => onEdit(task)} title="Edit">
+          <button
+            onClick={() => onEdit(task)}
+            title="Edit"
+            className="hover:scale-110 transition-transform"
+          >
             <Pencil size={14} className="text-gray-400 hover:text-blue-400" />
           </button>
-          <button onClick={() => onDelete(task.id)} title="Delete">
+          <button
+            onClick={() => onDelete(task.id)}
+            title="Delete"
+            className="hover:scale-110 transition-transform"
+          >
             <Trash2 size={14} className="text-gray-400 hover:text-red-400" />
           </button>
         </div>
 
+        {/* Priority + Status + Add Subtask */}
         <div className="flex items-end justify-between pt-1">
           <div className="flex flex-col items-start gap-1">
             <span
@@ -151,12 +160,8 @@ export default function TaskCard({
           {/* Add Subtask Button */}
           <div className="relative z-30 mt-1 flex justify-end">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditingSubtask(null); // ✅ force add mode only
-                setIsSubtaskModalOpen(true);
-              }}
-              className="p-1 text-white bg-blue-600 rounded-full hover:bg-blue-700"
+              onClick={handleAddSubtaskClick}
+              className="p-1 text-white bg-blue-600 rounded-full hover:bg-blue-700 hover:scale-110 transition-transform"
               title="Add Subtask"
             >
               <Plus size={14} />
@@ -187,13 +192,14 @@ export default function TaskCard({
               {(mainSubAssignee || supportingSubAssignees.length > 0) && (
                 <div
                   className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                    isSubHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"
+                    isSubHovered
+                      ? "max-h-16 mt-2 opacity-100"
+                      : "max-h-0 opacity-0"
                   }`}
                 >
                   <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
                     {mainSubAssignee && renderUserTag(mainSubAssignee, true)}
-                    {supportingSubAssignees.length > 0 &&
-                      supportingSubAssignees.map((u) => renderUserTag(u))}
+                    {supportingSubAssignees.map((u) => renderUserTag(u))}
                   </div>
                 </div>
               )}
@@ -203,6 +209,7 @@ export default function TaskCard({
                 <button
                   onClick={(e) => handleEditSubtask(e, sub)}
                   title="Edit Subtask"
+                  className="hover:scale-110 transition-transform"
                 >
                   <Pencil
                     size={12}
@@ -212,6 +219,7 @@ export default function TaskCard({
                 <button
                   onClick={(e) => handleDeleteSubtask(e, sub.id)}
                   title="Delete Subtask"
+                  className="hover:scale-110 transition-transform"
                 >
                   <Trash2
                     size={12}
@@ -220,6 +228,7 @@ export default function TaskCard({
                 </button>
               </div>
 
+              {/* Subtask Title + Checkbox */}
               <div className="pt-1 space-y-1">
                 <label className="flex items-center gap-1 pr-8 cursor-pointer">
                   <input
@@ -231,7 +240,9 @@ export default function TaskCard({
                     className="w-3.5 h-3.5 accent-green-500"
                   />
                   <span
-                    className={sub.completed ? "line-through text-gray-400" : ""}
+                    className={
+                      sub.completed ? "line-through text-gray-400" : ""
+                    }
                   >
                     {sub.title}
                   </span>
@@ -240,23 +251,6 @@ export default function TaskCard({
             </div>
           );
         })}
-
-      {/* Subtask Modal */}
-      {/* <AddSubtaskModal
-        isOpen={isSubtaskModalOpen}
-        onClose={() => {
-          setIsSubtaskModalOpen(false);
-          setEditingSubtask(null);
-        }}
-        onAdd={(parentTaskId, subtask) => {
-          onAddSubtask(parentTaskId, subtask);
-        }}
-        onUpdate={(parentTaskId, subtask) => {
-          handleSaveSubtask(parentTaskId, subtask);
-        }}
-        parentTask={task}
-        editingSubtask={editingSubtask}
-      /> */}
     </div>
   );
 }

@@ -1,137 +1,177 @@
-import { useState, useEffect } from 'react';
-import users from '../data/users';
+import React, { useState, useEffect } from "react";
+import users from "../data/users";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
-export default function AddSubtaskModal({ 
-  isOpen, 
-  onClose, 
-  onAdd, 
-  onUpdate, 
-  parentTask, 
-  editingSubtask = null 
+export default function AddSubtaskModal({
+  open,
+  onClose,
+  onAdd,
+  parentTask,
+  subtaskToEdit,
 }) {
-  const [title, setTitle] = useState('');
-  const [mainAssignee, setMainAssignee] = useState('');
+  const isEditMode = Boolean(subtaskToEdit);
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState("Medium");
+  const [mainAssignee, setMainAssignee] = useState("");
   const [supportingAssignees, setSupportingAssignees] = useState([]);
 
-  // Prefill fields if editing
+  // Reset form when modal opens or subtaskToEdit changes
   useEffect(() => {
-    if (editingSubtask) {
-      setTitle(editingSubtask.title || '');
-      setMainAssignee(editingSubtask.mainAssignee || '');
-      setSupportingAssignees(editingSubtask.supportingAssignees || []);
+    if (subtaskToEdit) {
+      setTitle(subtaskToEdit.title || "");
+      setDescription(subtaskToEdit.description || "");
+      setPriority(subtaskToEdit.priority || "Medium");
+      setMainAssignee(subtaskToEdit.mainAssignee || "");
+      setSupportingAssignees(subtaskToEdit.supportingAssignees || []);
     } else {
-      setTitle('');
-      setMainAssignee('');
+      setTitle("");
+      setDescription("");
+      setPriority("Medium");
+      setMainAssignee("");
       setSupportingAssignees([]);
     }
-  }, [editingSubtask]);
-
-	const handleCheckboxToggle = (userId) => {
-		setSupportingAssignees((prev) =>
-			prev.includes(userId)
-				? prev.filter((id) => id !== userId)
-				: [...prev, userId],
-		);
-	};
+  }, [subtaskToEdit, open]);
 
   const handleSubmit = () => {
-    if (!title.trim() || !mainAssignee) return; // ✅ Basic validation
+    if (!title.trim() || !mainAssignee) return;
 
     const subtaskData = {
-      id: editingSubtask ? editingSubtask.id : Date.now(),
-      title,
-      completed: editingSubtask ? editingSubtask.completed : false,
-      mainAssignee,
-      supportingAssignees,
+      id: subtaskToEdit?.id || Date.now(),
+      title: title.trim(),
+      description: description.trim(),
+      priority,
+      mainAssignee: Number(mainAssignee),
+      supportingAssignees: supportingAssignees.map(Number),
+      completed: subtaskToEdit?.completed || false,
+      createdAt: subtaskToEdit?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    if (editingSubtask) {
-      onUpdate(parentTask.id, subtaskData);
-    } else {
-      onAdd(parentTask.id, subtaskData);
-    }
-
+    onAdd(parentTask.id, subtaskData);
     onClose();
   };
 
-	if (!isOpen) return null;
+  const toggleSupporting = (id) => {
+    setSupportingAssignees((prev) =>
+      prev.includes(id) ? prev.filter((uid) => uid !== id) : [...prev, id]
+    );
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-gray-900 text-white w-full max-w-md p-6 rounded-lg shadow-lg">
-        <h2 className="text-xl font-bold mb-4">
-          {editingSubtask ? 'Edit Subtask' : 'Add Subtask'}
-        </h2>
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {isEditMode ? "Edit Subtask" : "Add New Subtask"}
+          </DialogTitle>
+        </DialogHeader>
 
-				{/* Title Input */}
-				<input
-					type="text"
-					placeholder="Subtask title"
-					value={title}
-					onChange={(e) => setTitle(e.target.value)}
-					className="w-full p-2 mb-4 rounded border border-gray-700 bg-gray-800 text-white"
-				/>
-
-				{/* Main Assignee Select */}
-				<div className="mb-4">
-					<label
-						htmlFor="main-assignee"
-						className="block mb-1 text-sm font-semibold"
-					>
-						Main Assignee
-					</label>
-					<select
-						id="main-assignee"
-						value={mainAssignee}
-						onChange={(e) => setMainAssignee(Number(e.target.value))}
-						className="w-full p-2 rounded border border-gray-700 bg-gray-800 text-white"
-					>
-						<option value="">-- Select --</option>
-						{users.map((user) => (
-							<option key={user.id} value={user.id}>
-								{user.fullName}
-							</option>
-						))}
-					</select>
-				</div>
-
-				{/* Supporting Assignees */}
-				<div className="mb-4">
-					<span className="block mb-1 text-sm font-semibold">
-						Supporting Assignees
-					</span>
-					<div className="flex flex-wrap gap-2">
-						{users.map((user) => (
-							<label key={user.id} className="flex items-center gap-1 text-sm">
-								<input
-									type="checkbox"
-									id={`supporting-${user.id}`}
-									checked={supportingAssignees.includes(user.id)}
-									onChange={() => handleCheckboxToggle(user.id)}
-									className="accent-blue-500"
-								/>
-								<span htmlFor={`supporting-${user.id}`}>{user.fullName}</span>
-							</label>
-						))}
-					</div>
-				</div>
-
-        {/* Action Buttons */}
-        <div className="flex justify-end gap-2 mt-4">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded bg-gray-700 text-white hover:bg-gray-600"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {editingSubtask ? 'Update' : 'Add'}
-          </button>
+        {/* Title */}
+        <div>
+          <Label htmlFor="subtask-title">Title</Label>
+          <Input
+            id="subtask-title"
+            placeholder="Subtask title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
         </div>
-      </div>
-    </div>
+
+        {/* Description */}
+        <div>
+          <Label htmlFor="subtask-description">Description</Label>
+          <Textarea
+            id="subtask-description"
+            placeholder="Subtask description"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+
+        {/* Priority */}
+        <div>
+          <Label>Priority</Label>
+          <Select value={priority} onValueChange={setPriority}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select priority" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="High">🔥 High</SelectItem>
+              <SelectItem value="Medium">⚠️ Medium</SelectItem>
+              <SelectItem value="Low">✅ Low</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Main Assignee */}
+        <div>
+          <Label htmlFor="subtask-main-assignee">Main Assignee</Label>
+          <select
+            id="subtask-main-assignee"
+            className="w-full p-2 border rounded text-black"
+            value={mainAssignee}
+            onChange={(e) => setMainAssignee(e.target.value)}
+          >
+            <option value="">Select</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.initials} — {u.fullName}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Supporting Assignees */}
+        <div>
+          <Label>Supporting Assignees</Label>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {users.map((u) => (
+              <label key={u.id} className="text-sm flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  value={u.id}
+                  checked={supportingAssignees.includes(u.id)}
+                  onChange={() => toggleSupporting(u.id)}
+                />
+                <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold">
+                  {u.initials}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="destructive">Cancel</Button>
+          </DialogClose>
+          <Button onClick={handleSubmit}>
+            {isEditMode ? "Save Changes" : "Add Subtask"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
