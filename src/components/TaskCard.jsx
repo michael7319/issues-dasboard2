@@ -9,18 +9,18 @@ const priorityBorderColors = {
 };
 
 export default function TaskCard({
-  task,
-  onEdit,
-  onDelete,
-  onAddSubtask,
-  onEditSubtask,
-  onComplete,
-  onDeleteSubtask,
-  onUpdateSubtask,
+	task,
+	onEdit,
+	onDelete,
+	onAddSubtask,
+	onEditSubtask,
+	onComplete,
+	onDeleteSubtask,
+	onUpdateSubtask,
 }) {
-  const [isCompleted, setIsCompleted] = useState(task.completed || false);
-  const [isHovered, setIsHovered] = useState(false);
-  const [hoveredSubtaskId, setHoveredSubtaskId] = useState(null);
+	const [isCompleted, setIsCompleted] = useState(task.completed || false);
+	const [isHovered, setIsHovered] = useState(false);
+	const [hoveredSubtaskId, setHoveredSubtaskId] = useState(null);
 
 	useEffect(() => {
 		setIsCompleted(task.completed || false);
@@ -40,51 +40,51 @@ export default function TaskCard({
 		onComplete(task.id, newStatus);
 	};
 
-  const handleSubtaskToggle = (e, subtaskId, completed) => {
-    e.stopPropagation();
-    e.preventDefault();
-    onUpdateSubtask(task.id, subtaskId, { completed: !completed });
-  };
+	const handleSubtaskToggle = (e, subtaskId, completed) => {
+		e.stopPropagation();
+		e.preventDefault();
+		onUpdateSubtask(task.id, subtaskId, { completed: !completed });
+	};
 
-  const handleEditSubtask = (e, subtask) => {
-    e.stopPropagation();
-    e.preventDefault();
-    console.log("Edit subtask button clicked");
-    if (typeof onEditSubtask === 'function') {
-      onEditSubtask(subtask);
-    } else {
-      console.error("onEditSubtask is not a function");
-    }
-  };
+	const handleEditSubtask = (e, subtask) => {
+		e.stopPropagation();
+		e.preventDefault();
+		console.log("Edit subtask button clicked");
+		if (typeof onEditSubtask === "function") {
+			onEditSubtask(subtask);
+		} else {
+			console.error("onEditSubtask is not a function");
+		}
+	};
 
-  const handleDeleteSubtask = (e, subtaskId) => {
-    e.stopPropagation();
-    e.preventDefault();
-    onDeleteSubtask(task.id, subtaskId);
-  };
+	const handleDeleteSubtask = (e, subtaskId) => {
+		e.stopPropagation();
+		e.preventDefault();
+		onDeleteSubtask(task.id, subtaskId);
+	};
 
-  const handleAddSubtaskClick = (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    console.log("Add subtask button clicked");
-    if (typeof onAddSubtask === 'function') {
-      onAddSubtask();
-    } else {
-      console.error("onAddSubtask is not a function");
-    }
-  };
+	const handleAddSubtaskClick = (e) => {
+		e.stopPropagation();
+		e.preventDefault();
+		console.log("Add subtask button clicked");
+		if (typeof onAddSubtask === "function") {
+			onAddSubtask();
+		} else {
+			console.error("onAddSubtask is not a function");
+		}
+	};
 
-  const handleEditClick = (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    onEdit(task);
-  };
+	const handleEditClick = (e) => {
+		e.stopPropagation();
+		e.preventDefault();
+		onEdit(task);
+	};
 
-  const handleDeleteClick = (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    onDelete(task.id);
-  };
+	const handleDeleteClick = (e) => {
+		e.stopPropagation();
+		e.preventDefault();
+		onDelete(task.id);
+	};
 
 	const getUserInitials = (user) => {
 		if (!user) return "";
@@ -94,177 +94,177 @@ export default function TaskCard({
 			: parts[0].slice(0, 2).toUpperCase();
 	};
 
-  const renderUserTag = (user, isMain = false) => {
-    if (!user) return null;
-    return (
-      <span
-        key={user.id}
-        className={`w-4 h-4 flex items-center justify-center rounded-full font-bold text-[9px] shadow ${
-          isMain ? "bg-blue-600 text-white" : "bg-green-500 text-white"
-        }`}
-      >
-        {getUserInitials(user)}
-      </span>
-    );
-  };
+	const renderUserTag = (user, isMain = false) => {
+		if (!user) return null;
+		return (
+			<span
+				key={user.id}
+				className={`w-4 h-4 flex items-center justify-center rounded-full font-bold text-[9px] shadow ${
+					isMain ? "bg-blue-600 text-white" : "bg-green-500 text-white"
+				}`}
+			>
+				{getUserInitials(user)}
+			</span>
+		);
+	};
 
-  return (
-    <div className="p-2 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px]">
-      {/* Main Task Block */}
-      <div
-        className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      >
-        <div>
-          <h3 className="text-sm font-semibold">{task.title}</h3>
-          <p className="text-xs text-gray-300">{task.description}</p>
-        </div>
+	return (
+		<div className="p-2 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px]">
+			{/* Main Task Block */}
+			<div
+				className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md"
+				onMouseEnter={() => setIsHovered(true)}
+				onMouseLeave={() => setIsHovered(false)}
+			>
+				<div>
+					<h3 className="text-sm font-semibold">{task.title}</h3>
+					<p className="text-xs text-gray-300">{task.description}</p>
+				</div>
 
-        {/* Hover Expanding Assignees */}
-        {(main || supporting.length > 0) && (
-          <div
-            className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              isHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"
-            }`}
-          >
-            <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
-              {main && renderUserTag(main, true)}
-              {supporting.length > 0 &&
-                supporting.map((u) => renderUserTag(u))}
-            </div>
-          </div>
-        )}
+				{/* Hover Expanding Assignees */}
+				{(main || supporting.length > 0) && (
+					<div
+						className={`overflow-hidden transition-all duration-300 ease-in-out ${
+							isHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"
+						}`}
+					>
+						<div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
+							{main && renderUserTag(main, true)}
+							{supporting.length > 0 && supporting.map((u) => renderUserTag(u))}
+						</div>
+					</div>
+				)}
 
-        {/* Edit/Delete Buttons */}
-        <div className="absolute flex gap-1 top-1 right-1 z-30">
-          <button 
-            onClick={handleEditClick}
-            title="Edit"
-          >
-            <Pencil size={14} className="text-gray-400 hover:text-blue-400" />
-          </button>
-          <button 
-            onClick={handleDeleteClick}
-            title="Delete"
-          >
-            <Trash2 size={14} className="text-gray-400 hover:text-red-400" />
-          </button>
-        </div>
+				{/* Edit/Delete Buttons */}
+				<div className="absolute flex gap-1 top-1 right-1 z-30">
+					<button type="button" onClick={handleEditClick} title="Edit">
+						<Pencil size={14} className="text-gray-400 hover:text-blue-400" />
+					</button>
+					<button type="button" onClick={handleDeleteClick} title="Delete">
+						<Trash2 size={14} className="text-gray-400 hover:text-red-400" />
+					</button>
+				</div>
 
-        <div className="flex items-end justify-between pt-1">
-          <div className="flex flex-col items-start gap-1">
-            <span
-              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                priorityBorderColors[task.priority] ||
-                "border-gray-400 text-gray-200"
-              }`}
-            >
-              {task.priority}
-            </span>
-            <label className="flex items-center gap-1 text-xs cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isCompleted}
-                onChange={handleToggle}
-                className="w-3.5 h-3.5 accent-green-500"
-              />
-              <span
-                className={isCompleted ? "text-green-400" : "text-yellow-400"}
-              >
-                {isCompleted ? "Complete" : "Pending"}
-              </span>
-            </label>
-          </div>
+				<div className="flex items-end justify-between pt-1">
+					<div className="flex flex-col items-start gap-1">
+						<span
+							className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+								priorityBorderColors[task.priority] ||
+								"border-gray-400 text-gray-200"
+							}`}
+						>
+							{task.priority}
+						</span>
+						<label className="flex items-center gap-1 text-xs cursor-pointer">
+							<input
+								type="checkbox"
+								checked={isCompleted}
+								onChange={handleToggle}
+								className="w-3.5 h-3.5 accent-green-500"
+							/>
+							<span
+								className={isCompleted ? "text-green-400" : "text-yellow-400"}
+							>
+								{isCompleted ? "Complete" : "Pending"}
+							</span>
+						</label>
+					</div>
 
-          {/* Add Subtask Button */}
-          <div className="relative z-30 mt-1 flex justify-end">
-            <button
-              onClick={handleAddSubtaskClick}
-              className="p-1 text-white bg-blue-600 rounded-full hover:bg-blue-700"
-              title="Add Subtask"
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
+					{/* Add Subtask Button */}
+					<div className="relative z-30 mt-1 flex justify-end">
+						<button
+							type="button"
+							onClick={handleAddSubtaskClick}
+							className="p-1 text-white bg-blue-600 rounded-full hover:bg-blue-700"
+							title="Add Subtask"
+						>
+							<Plus size={14} />
+						</button>
+					</div>
+				</div>
+			</div>
 
-      {/* Subtasks */}
-      {task.subtasks?.length > 0 &&
-        task.subtasks.map((sub) => {
-          const mainSubAssignee = users.find((u) => u.id === sub.mainAssignee);
-          const supportingSubAssignees = users.filter(
-            (u) =>
-              sub.supportingAssignees?.includes(u.id) &&
-              u.id !== sub.mainAssignee
-          );
-          const isSubHovered = hoveredSubtaskId === sub.id;
+			{/* Subtasks */}
+			{task.subtasks?.length > 0 &&
+				task.subtasks.map((sub) => {
+					const mainSubAssignee = users.find((u) => u.id === sub.mainAssignee);
+					const supportingSubAssignees = users.filter(
+						(u) =>
+							sub.supportingAssignees?.includes(u.id) &&
+							u.id !== sub.mainAssignee,
+					);
+					const isSubHovered = hoveredSubtaskId === sub.id;
 
-          return (
-            <div
-              key={sub.id}
-              className="relative p-2 text-xs bg-gray-800 border border-gray-600 rounded-md"
-              onMouseEnter={() => setHoveredSubtaskId(sub.id)}
-              onMouseLeave={() => setHoveredSubtaskId(null)}
-            >
-              {/* Expanding Assignees */}
-              {(mainSubAssignee || supportingSubAssignees.length > 0) && (
-                <div
-                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                    isSubHovered ? "max-h-16 mt-2 opacity-100" : "max-h-0 opacity-0"
-                  }`}
-                >
-                  <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
-                    {mainSubAssignee && renderUserTag(mainSubAssignee, true)}
-                    {supportingSubAssignees.length > 0 &&
-                      supportingSubAssignees.map((u) => renderUserTag(u))}
-                  </div>
-                </div>
-              )}
+					return (
+						<div
+							key={sub.id}
+							className="relative p-2 text-xs bg-gray-800 border border-gray-600 rounded-md"
+							onMouseEnter={() => setHoveredSubtaskId(sub.id)}
+							onMouseLeave={() => setHoveredSubtaskId(null)}
+						>
+							{/* Expanding Assignees */}
+							{(mainSubAssignee || supportingSubAssignees.length > 0) && (
+								<div
+									className={`overflow-hidden transition-all duration-300 ease-in-out ${
+										isSubHovered
+											? "max-h-16 mt-2 opacity-100"
+											: "max-h-0 opacity-0"
+									}`}
+								>
+									<div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20 backdrop-blur-sm">
+										{mainSubAssignee && renderUserTag(mainSubAssignee, true)}
+										{supportingSubAssignees.length > 0 &&
+											supportingSubAssignees.map((u) => renderUserTag(u))}
+									</div>
+								</div>
+							)}
 
-              {/* Edit/Delete Subtask */}
-              <div className="absolute flex gap-1 top-1 right-1 z-30">
-                <button
-                  onClick={(e) => handleEditSubtask(e, sub)}
-                  title="Edit Subtask"
-                >
-                  <Pencil
-                    size={12}
-                    className="text-gray-400 hover:text-blue-400"
-                  />
-                </button>
-                <button
-                  onClick={(e) => handleDeleteSubtask(e, sub.id)}
-                  title="Delete Subtask"
-                >
-                  <Trash2
-                    size={12}
-                    className="text-gray-400 hover:text-red-400"
-                  />
-                </button>
-              </div>
+							{/* Edit/Delete Subtask */}
+							<div className="absolute flex gap-1 top-1 right-1 z-30">
+								<button
+									type="button"
+									onClick={(e) => handleEditSubtask(e, sub)}
+									title="Edit Subtask"
+								>
+									<Pencil
+										size={12}
+										className="text-gray-400 hover:text-blue-400"
+									/>
+								</button>
+								<button
+									type="button"
+									onClick={(e) => handleDeleteSubtask(e, sub.id)}
+									title="Delete Subtask"
+								>
+									<Trash2
+										size={12}
+										className="text-gray-400 hover:text-red-400"
+									/>
+								</button>
+							</div>
 
-              <div className="pt-1 space-y-1">
-                <label className="flex items-center gap-1 pr-8 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={sub.completed}
-                    onChange={(e) =>
-                      handleSubtaskToggle(e, sub.id, sub.completed)
-                    }
-                    className="w-3.5 h-3.5 accent-green-500"
-                  />
-                  <span
-                    className={sub.completed ? "line-through text-gray-400" : ""}
-                  >
-                    {sub.title}
-                  </span>
-                </label>
-              </div>
-            </div>
-          );
-        })}
-    </div>
-  );
+							<div className="pt-1 space-y-1">
+								<label className="flex items-center gap-1 pr-8 cursor-pointer">
+									<input
+										type="checkbox"
+										checked={sub.completed}
+										onChange={(e) =>
+											handleSubtaskToggle(e, sub.id, sub.completed)
+										}
+										className="w-3.5 h-3.5 accent-green-500"
+									/>
+									<span
+										className={
+											sub.completed ? "line-through text-gray-400" : ""
+										}
+									>
+										{sub.title}
+									</span>
+								</label>
+							</div>
+						</div>
+					);
+				})}
+		</div>
+	);
 }
