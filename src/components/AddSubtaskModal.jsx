@@ -1,30 +1,46 @@
-import { useState, useEffect } from 'react';
-import users from '../data/users';
+import { useState, useEffect } from "react";
+import users from "../data/users";
+import { Zap } from "lucide-react";
 
-export default function AddSubtaskModal({ 
-  isOpen, 
-  onClose, 
-  onAdd, 
-  onUpdate, 
-  parentTask, 
-  editingSubtask = null 
+export default function AddSubtaskModal({
+	isOpen,
+	onClose,
+	onAdd,
+	onUpdate,
+	parentTask,
+	editingSubtask = null,
 }) {
-  const [title, setTitle] = useState('');
-  const [mainAssignee, setMainAssignee] = useState('');
-  const [supportingAssignees, setSupportingAssignees] = useState([]);
+	const [title, setTitle] = useState("");
+	const [mainAssignee, setMainAssignee] = useState("");
+	const [supportingAssignees, setSupportingAssignees] = useState([]);
 
-  // Prefill fields if editing
-  useEffect(() => {
-    if (editingSubtask) {
-      setTitle(editingSubtask.title || '');
-      setMainAssignee(editingSubtask.mainAssignee || '');
-      setSupportingAssignees(editingSubtask.supportingAssignees || []);
-    } else {
-      setTitle('');
-      setMainAssignee('');
-      setSupportingAssignees([]);
-    }
-  }, [editingSubtask]);
+	// const formSchema = Z.object({
+	// 	title: Z.string().min(1, "Title is required"),
+	// 	mainAssignee: Z.string().min(1, "Main assignee is required"),
+	// 	supportingAssignees: Z.array(Z.number()).optional(),
+	// });
+
+	// const form = useForm({
+	// 	resolver: zodResolver(formSchema),
+	// 	defaultValues: {
+	// 		title: editingSubtask?.title || "",
+	// 		mainAssignee: editingSubtask?.mainAssignee || "",
+	// 		supportingAssignees: editingSubtask?.supportingAssignees || [],
+	// 	},
+	// });
+
+	// Prefill fields if editing
+	useEffect(() => {
+		if (editingSubtask) {
+			setTitle(editingSubtask.title || "");
+			setMainAssignee(editingSubtask.mainAssignee || "");
+			setSupportingAssignees(editingSubtask.supportingAssignees || []);
+		} else {
+			setTitle("");
+			setMainAssignee("");
+			setSupportingAssignees([]);
+		}
+	}, [editingSubtask]);
 
 	const handleCheckboxToggle = (userId) => {
 		setSupportingAssignees((prev) =>
@@ -34,34 +50,34 @@ export default function AddSubtaskModal({
 		);
 	};
 
-  const handleSubmit = () => {
-    if (!title.trim() || !mainAssignee) return; // ✅ Basic validation
+	const handleSubmit = () => {
+		if (!title.trim() || !mainAssignee) return; // ✅ Basic validation
 
-    const subtaskData = {
-      id: editingSubtask ? editingSubtask.id : Date.now(),
-      title,
-      completed: editingSubtask ? editingSubtask.completed : false,
-      mainAssignee,
-      supportingAssignees,
-    };
+		const subtaskData = {
+			id: editingSubtask ? editingSubtask.id : Date.now(),
+			title,
+			completed: editingSubtask ? editingSubtask.completed : false,
+			mainAssignee,
+			supportingAssignees,
+		};
 
-    if (editingSubtask) {
-      onUpdate(parentTask.id, subtaskData);
-    } else {
-      onAdd(parentTask.id, subtaskData);
-    }
+		if (editingSubtask) {
+			onUpdate(parentTask.id, subtaskData);
+		} else {
+			onAdd(parentTask.id, subtaskData);
+		}
 
-    onClose();
-  };
+		onClose();
+	};
 
 	if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-gray-900 text-white w-full max-w-md p-6 rounded-lg shadow-lg">
-        <h2 className="text-xl font-bold mb-4">
-          {editingSubtask ? 'Edit Subtask' : 'Add Subtask'}
-        </h2>
+	return (
+		<div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+			<div className="bg-gray-900 text-white w-full max-w-md p-6 rounded-lg shadow-lg">
+				<h2 className="text-xl font-bold mb-4">
+					{editingSubtask ? "Edit Subtask" : "Add Subtask"}
+				</h2>
 
 				{/* Title Input */}
 				<input
@@ -116,22 +132,24 @@ export default function AddSubtaskModal({
 					</div>
 				</div>
 
-        {/* Action Buttons */}
-        <div className="flex justify-end gap-2 mt-4">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded bg-gray-700 text-white hover:bg-gray-600"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {editingSubtask ? 'Update' : 'Add'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+				{/* Action Buttons */}
+				<div className="flex justify-end gap-2 mt-4">
+					<button
+						type="button"
+						onClick={onClose}
+						className="px-4 py-2 rounded bg-gray-700 text-white hover:bg-gray-600"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						onClick={handleSubmit}
+						className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+					>
+						{editingSubtask ? "Update" : "Add"}
+					</button>
+				</div>
+			</div>
+		</div>
+	);
 }
