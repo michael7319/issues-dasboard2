@@ -140,7 +140,6 @@ export default function AddSubtaskModal({
                 <SelectValue placeholder="Select main assignee" />
               </SelectTrigger>
               <SelectContent>
-                {/* <SelectItem value="">Select an assignee</SelectItem> */}
                 {users.map((user) => (
                   <SelectItem key={user.id} value={String(user.id)}>
                     {user.fullName}
