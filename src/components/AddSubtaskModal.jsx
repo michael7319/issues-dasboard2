@@ -6,11 +6,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -19,158 +17,179 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function AddSubtaskModal({
   open,
   onClose,
   onAdd,
+  onUpdate,
   parentTask,
-  subtaskToEdit,
+  editingSubtask = null
 }) {
-  const isEditMode = Boolean(subtaskToEdit);
-
+  const isEditMode = Boolean(editingSubtask);
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState("Medium");
   const [mainAssignee, setMainAssignee] = useState("");
   const [supportingAssignees, setSupportingAssignees] = useState([]);
+  const [isMounted, setIsMounted] = useState(false);
 
-  // Reset form when modal opens or subtaskToEdit changes
+  // Initialize form
   useEffect(() => {
-    if (subtaskToEdit) {
-      setTitle(subtaskToEdit.title || "");
-      setDescription(subtaskToEdit.description || "");
-      setPriority(subtaskToEdit.priority || "Medium");
-      setMainAssignee(subtaskToEdit.mainAssignee || "");
-      setSupportingAssignees(subtaskToEdit.supportingAssignees || []);
+    setIsMounted(true);
+    
+    if (editingSubtask) {
+      setTitle(editingSubtask.title || "");
+      setMainAssignee(String(editingSubtask.mainAssignee || ""));
+      setSupportingAssignees(editingSubtask.supportingAssignees || []);
     } else {
       setTitle("");
-      setDescription("");
-      setPriority("Medium");
       setMainAssignee("");
       setSupportingAssignees([]);
     }
-  }, [subtaskToEdit, open]);
+  }, [editingSubtask, open]);
 
-  const handleSubmit = () => {
-    if (!title.trim() || !mainAssignee) return;
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    console.log("Subtask form submitted");
+    
+    if (!title.trim() || !mainAssignee) {
+      console.log("Validation failed - missing title or main assignee");
+      return;
+    }
 
     const subtaskData = {
-      id: subtaskToEdit?.id || Date.now(),
+      id: editingSubtask?.id || Date.now(),
       title: title.trim(),
-      description: description.trim(),
-      priority,
+      completed: editingSubtask?.completed || false,
       mainAssignee: Number(mainAssignee),
       supportingAssignees: supportingAssignees.map(Number),
-      completed: subtaskToEdit?.completed || false,
-      createdAt: subtaskToEdit?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
-    onAdd(parentTask.id, subtaskData);
+    console.log("Subtask data:", subtaskData);
+
+    if (isEditMode) {
+      console.log("Updating subtask");
+      onUpdate(parentTask.id, subtaskData);
+    } else {
+      console.log("Adding new subtask");
+      onAdd(parentTask.id, subtaskData);
+    }
+
+    handleClose();
+  };
+
+  const handleClose = () => {
+    console.log("Closing modal");
+    setTitle("");
+    setMainAssignee("");
+    setSupportingAssignees([]);
     onClose();
   };
 
-  const toggleSupporting = (id) => {
-    setSupportingAssignees((prev) =>
-      prev.includes(id) ? prev.filter((uid) => uid !== id) : [...prev, id]
+  const toggleSupporting = (userId) => {
+    setSupportingAssignees(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
     );
   };
 
+  if (!isMounted) return null;
+
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-w-lg">
+    <Dialog open={open} onOpenChange={(openState) => {
+      console.log("Dialog open change:", openState);
+      if (!openState) {
+        handleClose();
+      }
+    }}>
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>
-            {isEditMode ? "Edit Subtask" : "Add New Subtask"}
+          <DialogTitle className="text-center">
+            {isEditMode ? "Edit Subtask" : `Add Subtask to "${parentTask?.title}"`}
           </DialogTitle>
         </DialogHeader>
 
-        {/* Title */}
-        <div>
-          <Label htmlFor="subtask-title">Title</Label>
-          <Input
-            id="subtask-title"
-            placeholder="Subtask title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-
-        {/* Description */}
-        <div>
-          <Label htmlFor="subtask-description">Description</Label>
-          <Textarea
-            id="subtask-description"
-            placeholder="Subtask description"
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
-
-        {/* Priority */}
-        <div>
-          <Label>Priority</Label>
-          <Select value={priority} onValueChange={setPriority}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="High">🔥 High</SelectItem>
-              <SelectItem value="Medium">⚠️ Medium</SelectItem>
-              <SelectItem value="Low">✅ Low</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Main Assignee */}
-        <div>
-          <Label htmlFor="subtask-main-assignee">Main Assignee</Label>
-          <select
-            id="subtask-main-assignee"
-            className="w-full p-2 border rounded text-black"
-            value={mainAssignee}
-            onChange={(e) => setMainAssignee(e.target.value)}
-          >
-            <option value="">Select</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.initials} — {u.fullName}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Supporting Assignees */}
-        <div>
-          <Label>Supporting Assignees</Label>
-          <div className="flex flex-wrap gap-2 mt-1">
-            {users.map((u) => (
-              <label key={u.id} className="text-sm flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  value={u.id}
-                  checked={supportingAssignees.includes(u.id)}
-                  onChange={() => toggleSupporting(u.id)}
-                />
-                <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold">
-                  {u.initials}
-                </span>
-              </label>
-            ))}
+        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+          {/* Title Input */}
+          <div className="space-y-2">
+            <Label htmlFor="title" className="text-right">
+              Title *
+            </Label>
+            <Input
+              id="title"
+              placeholder="Enter subtask title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full"
+              required
+            />
           </div>
-        </div>
 
-        {/* Footer */}
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="destructive">Cancel</Button>
-          </DialogClose>
-          <Button onClick={handleSubmit}>
-            {isEditMode ? "Save Changes" : "Add Subtask"}
-          </Button>
-        </DialogFooter>
+          {/* Main Assignee Select */}
+          <div className="space-y-2">
+            <Label htmlFor="mainAssignee" className="text-right">
+              Main Assignee *
+            </Label>
+            <Select 
+              value={mainAssignee} 
+              onValueChange={setMainAssignee}
+              required
+            >
+              <SelectTrigger id="mainAssignee" className="w-full">
+                <SelectValue placeholder="Select main assignee" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Select an assignee</SelectItem>
+                {users.map((user) => (
+                  <SelectItem key={user.id} value={String(user.id)}>
+                    {user.fullName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Supporting Assignees */}
+          <div className="space-y-2">
+            <Label className="text-right">Supporting Assignees</Label>
+            <div className="grid gap-2 max-h-40 overflow-y-auto p-3 border rounded-md">
+              {users.map((user) => (
+                <div key={user.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`supporting-${user.id}`}
+                    checked={supportingAssignees.includes(user.id)}
+                    onCheckedChange={() => toggleSupporting(user.id)}
+                  />
+                  <label
+                    htmlFor={`supporting-${user.id}`}
+                    className="text-sm font-medium leading-none cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    {user.fullName}
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClose}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!title.trim() || !mainAssignee}
+              className="w-full sm:w-auto"
+            >
+              {isEditMode ? "Update Subtask" : "Add Subtask"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

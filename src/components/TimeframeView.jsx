@@ -16,6 +16,7 @@ export default function TimeframeView() {
   // ✅ Subtask modal state
   const [showSubtaskModal, setShowSubtaskModal] = useState(false);
   const [taskToSubtask, setTaskToSubtask] = useState(null);
+  const [editingSubtask, setEditingSubtask] = useState(null);
 
   // Spacing variant state
   const [spacingVariant, setSpacingVariant] = useState("medium");
@@ -41,7 +42,6 @@ export default function TimeframeView() {
       return [newTask, ...prev];
     });
 
-    // Close the modal after adding/editing and reset editing state
     setEditingTask(null);
     setIsModalOpen(false);
   };
@@ -57,12 +57,10 @@ export default function TimeframeView() {
     );
   };
 
-  // ✅ Delete main task
   const handleDeleteTask = (taskId) => {
     setTasks((prev) => prev.filter((task) => task.id !== taskId));
   };
 
-  // ✅ Delete subtask
   const handleDeleteSubtask = (taskId, subtaskId) => {
     setTasks((prev) =>
       prev.map((task) =>
@@ -76,7 +74,6 @@ export default function TimeframeView() {
     );
   };
 
-  // ✅ Update subtask
   const handleUpdateSubtask = (taskId, subtaskId, updates) => {
     setTasks((prev) =>
       prev.map((task) =>
@@ -96,6 +93,20 @@ export default function TimeframeView() {
     setTasks((prev) =>
       prev.map((task) => (task.id === taskId ? { ...task, completed } : task))
     );
+  };
+
+  const handleAddSubtask = (task) => {
+    console.log("Adding subtask to task:", task.id);
+    setTaskToSubtask(task);
+    setEditingSubtask(null);
+    setShowSubtaskModal(true);
+  };
+
+  const handleEditSubtask = (task, subtask) => {
+    console.log("Editing subtask:", subtask.id);
+    setTaskToSubtask(task);
+    setEditingSubtask(subtask);
+    setShowSubtaskModal(true);
   };
 
   const timeframes = ["all", "daily", "weekly", "project", "custom"];
@@ -149,7 +160,6 @@ export default function TimeframeView() {
     return matchesPriority && matchesAssignee;
   };
 
-  // Tighter spacing values
   const gapClass = {
     tight: "gap-[2px]",
     medium: "gap-[6px]",
@@ -252,11 +262,8 @@ export default function TimeframeView() {
                       onEdit={handleEditTask}
                       onDelete={handleDeleteTask}
                       onComplete={handleMarkComplete}
-                      updateTask={handleUpdateTask}
-                      onAddSubtask={() => {
-                        setTaskToSubtask(task);
-                        setShowSubtaskModal(true);
-                      }}
+                      onAddSubtask={() => handleAddSubtask(task)}
+                      onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
                       onDeleteSubtask={handleDeleteSubtask}
                       onUpdateSubtask={handleUpdateSubtask}
                     />
@@ -281,7 +288,7 @@ export default function TimeframeView() {
         + Add Task
       </button>
 
-      {/* ✅ Add/Edit Task Modal (shadcn/Dialog version) */}
+      {/* ✅ Add/Edit Task Modal */}
       <AddTaskModal
         open={isModalOpen}
         onClose={() => {
@@ -292,24 +299,45 @@ export default function TimeframeView() {
         taskToEdit={editingTask}
       />
 
-      {/* ✅ The only Add Subtask Modal */}
-      {showSubtaskModal && taskToSubtask && (
-        <AddSubtaskModal
-          isOpen={showSubtaskModal}
-          onClose={() => setShowSubtaskModal(false)}
-          onAdd={(taskId, subtask) => {
-            setTasks((prev) =>
-              prev.map((task) =>
-                task.id === taskId
-                  ? { ...task, subtasks: [...(task.subtasks || []), subtask] }
-                  : task
-              )
-            );
-            setShowSubtaskModal(false);
-          }}
-          parentTask={taskToSubtask}
-        />
-      )}
+      {/* ✅ Add/Edit Subtask Modal */}
+      <AddSubtaskModal
+        open={showSubtaskModal}
+        onClose={() => {
+          setShowSubtaskModal(false);
+          setTaskToSubtask(null);
+          setEditingSubtask(null);
+        }}
+        onAdd={(taskId, subtask) => {
+          setTasks((prev) =>
+            prev.map((task) =>
+              task.id === taskId
+                ? { ...task, subtasks: [...(task.subtasks || []), subtask] }
+                : task
+            )
+          );
+          setShowSubtaskModal(false);
+          setTaskToSubtask(null);
+        }}
+        onUpdate={(taskId, subtask) => {
+          setTasks((prev) =>
+            prev.map((task) =>
+              task.id === taskId
+                ? {
+                    ...task,
+                    subtasks: task.subtasks.map((s) =>
+                      s.id === subtask.id ? subtask : s
+                    ),
+                  }
+                : task
+            )
+          );
+          setShowSubtaskModal(false);
+          setTaskToSubtask(null);
+          setEditingSubtask(null);
+        }}
+        parentTask={taskToSubtask}
+        editingSubtask={editingSubtask}
+      />
     </div>
   );
 }
