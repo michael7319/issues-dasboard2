@@ -1,155 +1,195 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import users from "../data/users";
-import { Zap } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function AddSubtaskModal({
-	isOpen,
-	onClose,
-	onAdd,
-	onUpdate,
-	parentTask,
-	editingSubtask = null,
+  open,
+  onClose,
+  onAdd,
+  onUpdate,
+  parentTask,
+  editingSubtask = null
 }) {
-	const [title, setTitle] = useState("");
-	const [mainAssignee, setMainAssignee] = useState("");
-	const [supportingAssignees, setSupportingAssignees] = useState([]);
+  const isEditMode = Boolean(editingSubtask);
+  const [title, setTitle] = useState("");
+  const [mainAssignee, setMainAssignee] = useState("");
+  const [supportingAssignees, setSupportingAssignees] = useState([]);
+  const [isMounted, setIsMounted] = useState(false);
 
-	// const formSchema = Z.object({
-	// 	title: Z.string().min(1, "Title is required"),
-	// 	mainAssignee: Z.string().min(1, "Main assignee is required"),
-	// 	supportingAssignees: Z.array(Z.number()).optional(),
-	// });
+  // Initialize form
+  useEffect(() => {
+    setIsMounted(true);
+    
+    if (editingSubtask) {
+      setTitle(editingSubtask.title || "");
+      setMainAssignee(String(editingSubtask.mainAssignee || ""));
+      setSupportingAssignees(editingSubtask.supportingAssignees || []);
+    } else {
+      setTitle("");
+      setMainAssignee("");
+      setSupportingAssignees([]);
+    }
+  }, [editingSubtask, open]);
 
-	// const form = useForm({
-	// 	resolver: zodResolver(formSchema),
-	// 	defaultValues: {
-	// 		title: editingSubtask?.title || "",
-	// 		mainAssignee: editingSubtask?.mainAssignee || "",
-	// 		supportingAssignees: editingSubtask?.supportingAssignees || [],
-	// 	},
-	// });
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    console.log("Subtask form submitted");
+    
+    if (!title.trim() || !mainAssignee) {
+      console.log("Validation failed - missing title or main assignee");
+      return;
+    }
 
-	// Prefill fields if editing
-	useEffect(() => {
-		if (editingSubtask) {
-			setTitle(editingSubtask.title || "");
-			setMainAssignee(editingSubtask.mainAssignee || "");
-			setSupportingAssignees(editingSubtask.supportingAssignees || []);
-		} else {
-			setTitle("");
-			setMainAssignee("");
-			setSupportingAssignees([]);
-		}
-	}, [editingSubtask]);
+    const subtaskData = {
+      id: editingSubtask?.id || Date.now(),
+      title: title.trim(),
+      completed: editingSubtask?.completed || false,
+      mainAssignee: Number(mainAssignee),
+      supportingAssignees: supportingAssignees.map(Number),
+    };
 
-	const handleCheckboxToggle = (userId) => {
-		setSupportingAssignees((prev) =>
-			prev.includes(userId)
-				? prev.filter((id) => id !== userId)
-				: [...prev, userId],
-		);
-	};
+    console.log("Subtask data:", subtaskData);
 
-	const handleSubmit = () => {
-		if (!title.trim() || !mainAssignee) return; // ✅ Basic validation
+    if (isEditMode) {
+      console.log("Updating subtask");
+      onUpdate(parentTask.id, subtaskData);
+    } else {
+      console.log("Adding new subtask");
+      onAdd(parentTask.id, subtaskData);
+    }
 
-		const subtaskData = {
-			id: editingSubtask ? editingSubtask.id : Date.now(),
-			title,
-			completed: editingSubtask ? editingSubtask.completed : false,
-			mainAssignee,
-			supportingAssignees,
-		};
+    handleClose();
+  };
 
-		if (editingSubtask) {
-			onUpdate(parentTask.id, subtaskData);
-		} else {
-			onAdd(parentTask.id, subtaskData);
-		}
+  const handleClose = () => {
+    console.log("Closing modal");
+    setTitle("");
+    setMainAssignee("");
+    setSupportingAssignees([]);
+    onClose();
+  };
 
-		onClose();
-	};
+  const toggleSupporting = (userId) => {
+    setSupportingAssignees(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
 
-	if (!isOpen) return null;
+  if (!isMounted) return null;
 
-	return (
-		<div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-			<div className="bg-gray-900 text-white w-full max-w-md p-6 rounded-lg shadow-lg">
-				<h2 className="text-xl font-bold mb-4">
-					{editingSubtask ? "Edit Subtask" : "Add Subtask"}
-				</h2>
+  return (
+    <Dialog open={open} onOpenChange={(openState) => {
+      console.log("Dialog open change:", openState);
+      if (!openState) {
+        handleClose();
+      }
+    }}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle className="text-center">
+            {isEditMode ? "Edit Subtask" : `Add Subtask to "${parentTask?.title}"`}
+          </DialogTitle>
+        </DialogHeader>
 
-				{/* Title Input */}
-				<input
-					type="text"
-					placeholder="Subtask title"
-					value={title}
-					onChange={(e) => setTitle(e.target.value)}
-					className="w-full p-2 mb-4 rounded border border-gray-700 bg-gray-800 text-white"
-				/>
+        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+          {/* Title Input */}
+          <div className="space-y-2">
+            <Label htmlFor="title" className="text-right">
+              Title *
+            </Label>
+            <Input
+              id="title"
+              placeholder="Enter subtask title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full"
+              required
+            />
+          </div>
 
-				{/* Main Assignee Select */}
-				<div className="mb-4">
-					<label
-						htmlFor="main-assignee"
-						className="block mb-1 text-sm font-semibold"
-					>
-						Main Assignee
-					</label>
-					<select
-						id="main-assignee"
-						value={mainAssignee}
-						onChange={(e) => setMainAssignee(Number(e.target.value))}
-						className="w-full p-2 rounded border border-gray-700 bg-gray-800 text-white"
-					>
-						<option value="">-- Select --</option>
-						{users.map((user) => (
-							<option key={user.id} value={user.id}>
-								{user.fullName}
-							</option>
-						))}
-					</select>
-				</div>
+          {/* Main Assignee Select */}
+          <div className="space-y-2">
+            <Label htmlFor="mainAssignee" className="text-right">
+              Main Assignee *
+            </Label>
+            <Select 
+              value={mainAssignee} 
+              onValueChange={setMainAssignee}
+              required
+            >
+              <SelectTrigger id="mainAssignee" className="w-full">
+                <SelectValue placeholder="Select main assignee" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((user) => (
+                  <SelectItem key={user.id} value={String(user.id)}>
+                    {user.fullName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-				{/* Supporting Assignees */}
-				<div className="mb-4">
-					<span className="block mb-1 text-sm font-semibold">
-						Supporting Assignees
-					</span>
-					<div className="flex flex-wrap gap-2">
-						{users.map((user) => (
-							<label key={user.id} className="flex items-center gap-1 text-sm">
-								<input
-									type="checkbox"
-									id={`supporting-${user.id}`}
-									checked={supportingAssignees.includes(user.id)}
-									onChange={() => handleCheckboxToggle(user.id)}
-									className="accent-blue-500"
-								/>
-								<span htmlFor={`supporting-${user.id}`}>{user.fullName}</span>
-							</label>
-						))}
-					</div>
-				</div>
+          {/* Supporting Assignees */}
+          <div className="space-y-2">
+            <Label className="text-right">Supporting Assignees</Label>
+            <div className="grid gap-2 max-h-40 overflow-y-auto p-3 border rounded-md">
+              {users.map((user) => (
+                <div key={user.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`supporting-${user.id}`}
+                    checked={supportingAssignees.includes(user.id)}
+                    onCheckedChange={() => toggleSupporting(user.id)}
+                  />
+                  <label
+                    htmlFor={`supporting-${user.id}`}
+                    className="text-sm font-medium leading-none cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    {user.fullName}
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
 
-				{/* Action Buttons */}
-				<div className="flex justify-end gap-2 mt-4">
-					<button
-						type="button"
-						onClick={onClose}
-						className="px-4 py-2 rounded bg-gray-700 text-white hover:bg-gray-600"
-					>
-						Cancel
-					</button>
-					<button
-						type="button"
-						onClick={handleSubmit}
-						className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-					>
-						{editingSubtask ? "Update" : "Add"}
-					</button>
-				</div>
-			</div>
-		</div>
-	);
+          <DialogFooter className="gap-2 sm:gap-0 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClose}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!title.trim() || !mainAssignee}
+              className="w-full sm:w-auto"
+            >
+              {isEditMode ? "Update Subtask" : "Add Subtask"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }

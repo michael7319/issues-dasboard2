@@ -6,16 +6,17 @@ import users from "../data/users";
 import defaultTasks from "../data/tasks";
 
 export default function TimeframeView() {
-	const [tasks, setTasks] = useState([]);
-	const [selectedTimeframe, setSelectedTimeframe] = useState("all");
-	const [priorityFilter, setPriorityFilter] = useState("all");
-	const [assigneeFilter, setAssigneeFilter] = useState("all");
-	const [showModal, setShowModal] = useState(false);
-	const [editingTask, setEditingTask] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [selectedTimeframe, setSelectedTimeframe] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
 
-	// ✅ Subtask modal state
-	const [showSubtaskModal, setShowSubtaskModal] = useState(false);
-	const [taskToSubtask, setTaskToSubtask] = useState(null);
+  // ✅ Subtask modal state
+  const [showSubtaskModal, setShowSubtaskModal] = useState(false);
+  const [taskToSubtask, setTaskToSubtask] = useState(null);
+  const [editingSubtask, setEditingSubtask] = useState(null);
 
 	// Spacing variant state
 	const [spacingVariant, setSpacingVariant] = useState("medium");
@@ -34,19 +35,21 @@ export default function TimeframeView() {
 		localStorage.setItem("tasks", JSON.stringify(tasks));
 	}, [tasks]);
 
-	const handleAddOrEditTask = (newTask) => {
-		setTasks((prev) => {
-			const exists = prev.find((t) => t.id === newTask.id);
-			if (exists) return prev.map((t) => (t.id === newTask.id ? newTask : t));
-			return [newTask, ...prev];
-		});
-		setEditingTask(null);
-	};
+  const handleAddOrEditTask = (newTask) => {
+    setTasks((prev) => {
+      const exists = prev.find((t) => t.id === newTask.id);
+      if (exists) return prev.map((t) => (t.id === newTask.id ? newTask : t));
+      return [newTask, ...prev];
+    });
 
-	const handleEditTask = (task) => {
-		setEditingTask(task);
-		setShowModal(true);
-	};
+    setEditingTask(null);
+    setIsModalOpen(false);
+  };
+
+  const handleEditTask = (task) => {
+    setEditingTask(task);
+    setIsModalOpen(true);
+  };
 
 	const handleUpdateTask = (updatedTask, task_id) => {
 		setTasks((prevTasks) =>
@@ -54,46 +57,57 @@ export default function TimeframeView() {
 		);
 	};
 
-	// ✅ Delete main task
-	const handleDeleteTask = (taskId) => {
-		setTasks((prev) => prev.filter((task) => task.id !== taskId));
-	};
+  const handleDeleteTask = (taskId) => {
+    setTasks((prev) => prev.filter((task) => task.id !== taskId));
+  };
 
-	// ✅ Delete subtask
-	const handleDeleteSubtask = (taskId, subtaskId) => {
-		setTasks((prev) =>
-			prev.map((task) =>
-				task.id === taskId
-					? {
-							...task,
-							subtasks: task.subtasks.filter((s) => s.id !== subtaskId),
-						}
-					: task,
-			),
-		);
-	};
+  const handleDeleteSubtask = (taskId, subtaskId) => {
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              subtasks: task.subtasks.filter((s) => s.id !== subtaskId),
+            }
+          : task
+      )
+    );
+  };
 
-	// ✅ Update subtask
-	const handleUpdateSubtask = (taskId, subtaskId, updates) => {
-		setTasks((prev) =>
-			prev.map((task) =>
-				task.id === taskId
-					? {
-							...task,
-							subtasks: task.subtasks.map((s) =>
-								s.id === subtaskId ? { ...s, ...updates } : s,
-							),
-						}
-					: task,
-			),
-		);
-	};
+  const handleUpdateSubtask = (taskId, subtaskId, updates) => {
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              subtasks: task.subtasks.map((s) =>
+                s.id === subtaskId ? { ...s, ...updates } : s
+              ),
+            }
+          : task
+      )
+    );
+  };
 
-	const handleMarkComplete = (taskId, completed) => {
-		setTasks((prev) =>
-			prev.map((task) => (task.id === taskId ? { ...task, completed } : task)),
-		);
-	};
+  const handleMarkComplete = (taskId, completed) => {
+    setTasks((prev) =>
+      prev.map((task) => (task.id === taskId ? { ...task, completed } : task))
+    );
+  };
+
+  const handleAddSubtask = (task) => {
+    console.log("Adding subtask to task:", task.id);
+    setTaskToSubtask(task);
+    setEditingSubtask(null);
+    setShowSubtaskModal(true);
+  };
+
+  const handleEditSubtask = (task, subtask) => {
+    console.log("Editing subtask:", subtask.id);
+    setTaskToSubtask(task);
+    setEditingSubtask(subtask);
+    setShowSubtaskModal(true);
+  };
 
 	const timeframes = ["all", "daily", "weekly", "project", "custom"];
 	const groups = { daily: [], weekly: [], project: [], custom: [] };
@@ -146,12 +160,11 @@ export default function TimeframeView() {
 		return matchesPriority && matchesAssignee;
 	};
 
-	// Tighter spacing values
-	const gapClass = {
-		tight: "gap-[2px]",
-		medium: "gap-[6px]",
-		loose: "gap-[12px]",
-	};
+  const gapClass = {
+    tight: "gap-[2px]",
+    medium: "gap-[6px]",
+    loose: "gap-[12px]",
+  };
 
 	return (
 		<div className="relative flex flex-col p-3 gap-4">
@@ -236,80 +249,96 @@ export default function TimeframeView() {
 							Tasks
 						</h2>
 
-						{filtered.length > 0 ? (
-							<div
-								className={`flex gap-2 flex-wrap ${gapClass[spacingVariant]}`}
-							>
-								{filtered.map((task) => (
-									<div
-										key={task.id}
-										className="transition-all duration-300 hover:scale-[1.01]"
-									>
-										<TaskCard
-											task={task}
-											onEdit={handleEditTask}
-											onDelete={handleDeleteTask}
-											onComplete={handleMarkComplete}
-											updateTask={handleUpdateTask}
-											onAddSubtask={() => {
-												setTaskToSubtask(task);
-												setShowSubtaskModal(true);
-											}}
-											onDeleteSubtask={handleDeleteSubtask}
-											onUpdateSubtask={handleUpdateSubtask}
-										/>
-									</div>
-								))}
-							</div>
-						) : (
-							<p className="text-sm italic text-gray-300">No tasks to show.</p>
-						)}
-					</div>
-				);
-			})}
+            {filtered.length > 0 ? (
+              <div
+                className={`flex gap-2 flex-wrap ${gapClass[spacingVariant]}`}
+              >
+                {filtered.map((task) => (
+                  <div
+                    key={task.id}
+                    className="transition-all duration-300 hover:scale-[1.01]"
+                  >
+                    <TaskCard
+                      task={task}
+                      onEdit={handleEditTask}
+                      onDelete={handleDeleteTask}
+                      onComplete={handleMarkComplete}
+                      onAddSubtask={() => handleAddSubtask(task)}
+                      onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
+                      onDeleteSubtask={handleDeleteSubtask}
+                      onUpdateSubtask={handleUpdateSubtask}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm italic text-gray-300">No tasks to show.</p>
+            )}
+          </div>
+        );
+      })}
 
-			{/* Global Add Task Button */}
-			<button
-				type="button"
-				onClick={() => {
-					setEditingTask(null);
-					setShowModal(true);
-				}}
-				className="fixed z-50 px-6 py-3 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700"
-			>
-				+ Add Task
-			</button>
+      {/* Global Add Task Button */}
+      <button
+        onClick={() => {
+          setEditingTask(null);
+          setIsModalOpen(true);
+        }}
+        className="fixed z-50 px-6 py-3 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700"
+      >
+        + Add Task
+      </button>
 
-			{/* Add/Edit Task Modal */}
-			{showModal && (
-				<AddTaskModal
-					onClose={() => {
-						setShowModal(false);
-						setEditingTask(null);
-					}}
-					onAdd={handleAddOrEditTask}
-					taskToEdit={editingTask}
-				/>
-			)}
+      {/* ✅ Add/Edit Task Modal */}
+      <AddTaskModal
+        open={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTask(null);
+        }}
+        onAdd={handleAddOrEditTask}
+        taskToEdit={editingTask}
+      />
 
-			{/* ✅ The only Add Subtask Modal */}
-			{showSubtaskModal && taskToSubtask && (
-				<AddSubtaskModal
-					isOpen={showSubtaskModal}
-					onClose={() => setShowSubtaskModal(false)}
-					onAdd={(taskId, subtask) => {
-						setTasks((prev) =>
-							prev.map((task) =>
-								task.id === taskId
-									? { ...task, subtasks: [...(task.subtasks || []), subtask] }
-									: task,
-							),
-						);
-						setShowSubtaskModal(false);
-					}}
-					parentTask={taskToSubtask}
-				/>
-			)}
-		</div>
-	);
+      {/* ✅ Add/Edit Subtask Modal */}
+      <AddSubtaskModal
+        open={showSubtaskModal}
+        onClose={() => {
+          setShowSubtaskModal(false);
+          setTaskToSubtask(null);
+          setEditingSubtask(null);
+        }}
+        onAdd={(taskId, subtask) => {
+          setTasks((prev) =>
+            prev.map((task) =>
+              task.id === taskId
+                ? { ...task, subtasks: [...(task.subtasks || []), subtask] }
+                : task
+            )
+          );
+          setShowSubtaskModal(false);
+          setTaskToSubtask(null);
+        }}
+        onUpdate={(taskId, subtask) => {
+          setTasks((prev) =>
+            prev.map((task) =>
+              task.id === taskId
+                ? {
+                    ...task,
+                    subtasks: task.subtasks.map((s) =>
+                      s.id === subtask.id ? subtask : s
+                    ),
+                  }
+                : task
+            )
+          );
+          setShowSubtaskModal(false);
+          setTaskToSubtask(null);
+          setEditingSubtask(null);
+        }}
+        parentTask={taskToSubtask}
+        editingSubtask={editingSubtask}
+      />
+    </div>
+  );
 }
