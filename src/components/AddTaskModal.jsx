@@ -92,41 +92,43 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       }
     }}>
       <DialogContent className="max-w-lg" showClose={false}>
-        <DialogHeader>
+        <DialogHeader className="mb-4">
           <DialogTitle>
             {isEditMode ? "Edit Task" : "Add New Task"}
           </DialogTitle>
         </DialogHeader>
 
         {/* Title */}
-        <div>
-          <Label htmlFor="title">Title</Label>
+        <div className="mb-5">
+          <Label htmlFor="title" className="mb-2 block font-medium">Title</Label>
           <Input
             id="title"
             placeholder="Task title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            className="mt-1"
           />
         </div>
 
         {/* Description */}
-        <div>
-          <Label htmlFor="description">Description</Label>
+        <div className="mb-5">
+          <Label htmlFor="description" className="mb-2 block font-medium">Description</Label>
           <Textarea
             id="description"
             placeholder="Task description"
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            className="mt-1"
           />
         </div>
 
         {/* Priority & Type */}
-        <div className="flex gap-2">
+        <div className="flex gap-4 mb-5">
           <div className="flex-1">
-            <Label>Priority</Label>
+            <Label className="mb-2 block font-medium">Priority</Label>
             <Select value={priority} onValueChange={setPriority}>
-              <SelectTrigger>
+              <SelectTrigger className="mt-1">
                 <SelectValue placeholder="Select priority" />
               </SelectTrigger>
               <SelectContent>
@@ -138,9 +140,9 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
           </div>
 
           <div className="flex-1">
-            <Label>Type</Label>
+            <Label className="mb-2 block font-medium">Type</Label>
             <Select value={type} onValueChange={setType}>
-              <SelectTrigger>
+              <SelectTrigger className="mt-1">
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               <SelectContent>
@@ -154,11 +156,11 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         </div>
 
         {/* Main Assignee */}
-        <div>
-          <Label htmlFor="main-assignee">Main Assignee</Label>
+        <div className="mb-5">
+          <Label htmlFor="main-assignee" className="mb-2 block font-medium">Main Assignee</Label>
           <select
             id="main-assignee"
-            className="w-full p-2 border rounded text-black"
+            className="w-full p-2 border rounded text-black mt-1"
             value={mainAssignee}
             onChange={(e) => setMainAssignee(e.target.value)}
           >
@@ -172,8 +174,8 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         </div>
 
         {/* Supporting Assignees */}
-        <div>
-          <Label>Supporting Assignees</Label>
+        <div className="mb-6">
+          <Label className="mb-2 block font-medium">Supporting Assignees</Label>
           <div className="flex flex-wrap gap-2 mt-1">
             {users.map((u) => (
               <label key={u.id} className="text-sm flex items-center gap-1">
@@ -193,7 +195,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         </div>
 
         {/* Footer */}
-        <DialogFooter>
+        <DialogFooter className="mt-2">
           <DialogClose asChild>
             <Button variant="destructive">Cancel</Button>
           </DialogClose>

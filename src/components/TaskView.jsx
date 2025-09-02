@@ -5,9 +5,8 @@ import AddSubtaskModal from "./AddSubtaskModal";
 import users from "../data/users";
 import defaultTasks from "../data/tasks";
 
-export default function TimeframeView() {
+export default function TaskView() {
   const [tasks, setTasks] = useState([]);
-  const [selectedTimeframe, setSelectedTimeframe] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -53,6 +52,9 @@ export default function TimeframeView() {
       }
       return [newTask, ...prev];
     });
+
+    // Dispatch taskAdded event for Sidebar to update recent tasks
+    window.dispatchEvent(new CustomEvent("taskAdded", { detail: { task: newTask } }));
 
     setEditingTask(null);
     setIsModalOpen(false);
@@ -126,33 +128,6 @@ export default function TimeframeView() {
     setIsModalOpen(true);
   };
 
-  const timeframes = ["all", "daily", "weekly", "project", "custom"];
-  const groups = { daily: [], weekly: [], project: [], custom: [] };
-  for (const task of tasks) {
-    if (groups[task.type]) groups[task.type].push(task);
-    else groups.custom.push(task);
-  }
-
-  const getIcon = (type) => {
-    switch (type) {
-      case "daily":
-        return "🕒";
-      case "weekly":
-        return "🗓️";
-      case "project":
-        return "🛠️";
-      default:
-        return "✏️";
-    }
-  };
-
-  const tabClass = (timeframe) =>
-    `relative px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
-      selectedTimeframe === timeframe
-        ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg"
-        : "border border-gray-700 text-gray-300 hover:border-blue-500 hover:text-white"
-    }`;
-
   const handleUnifiedFilterChange = (value) => {
     if (value === "all") {
       setPriorityFilter("all");
@@ -185,32 +160,12 @@ export default function TimeframeView() {
     loose: "gap-[24px]",
   };
 
+  const filteredTasks = tasks.filter(filterTask);
+
   return (
     <div className="relative flex flex-col p-3 gap-4">
       {/* Filters & search controls */}
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow bg-gray-900/80 backdrop-blur-sm">
-        <div className="flex gap-2 overflow-x-auto">
-          {timeframes.map((tf) => (
-            <button
-              key={tf}
-              type="button"
-              onClick={() => setSelectedTimeframe(tf)}
-              className={tabClass(tf)}
-            >
-              <span className="flex items-center gap-2">
-                {tf === "all"
-                  ? "All"
-                  : `${getIcon(tf)} ${tf.charAt(0).toUpperCase() + tf.slice(1)}`}
-                {tf !== "all" && (
-                  <span className="bg-black/30 px-2 py-1 rounded-full text-xs font-semibold">
-                    {groups[tf].length}
-                  </span>
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
-
         <select
           value={
             priorityFilter !== "all"
@@ -250,47 +205,32 @@ export default function TimeframeView() {
         </div>
       </div>
 
-      {/* Task Groups */}
-      {Object.entries(groups).map(([type, taskList]) => {
-        if (selectedTimeframe !== "all" && selectedTimeframe !== type) return null;
-        const filtered = taskList.filter(filterTask);
-
-        return (
-          <div
-            key={type}
-            className="p-3 rounded-lg shadow-md bg-white/10 animate-fadeIn"
-          >
-            <h2 className="flex items-center gap-2 mb-3 text-lg font-semibold capitalize text-white">
-              {getIcon(type)} {type.charAt(0).toUpperCase() + type.slice(1)}{" "}
-              Tasks
-            </h2>
-
-            {filtered.length > 0 ? (
-              <div className={`flex gap-2 flex-wrap ${gapClass.medium}`}>
-                {filtered.map((task) => (
-                  <div
-                    key={task.id}
-                    className="transition-all duration-300 hover:scale-[1.01]"
-                  >
-                    <TaskCard
-                      task={task}
-                      onEdit={handleEditTask}
-                      onDelete={handleDeleteTask}
-                      onComplete={handleMarkComplete}
-                      onAddSubtask={() => handleAddSubtask(task)}
-                      onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
-                      onDeleteSubtask={handleDeleteSubtask}
-                      onUpdateSubtask={handleUpdateSubtask}
-                    />
-                  </div>
-                ))}
+      {/* Task List */}
+      <div className="p-3 rounded-lg shadow-md bg-white/10 animate-fadeIn">
+        {filteredTasks.length > 0 ? (
+          <div className={`flex gap-2 flex-wrap ${gapClass.medium}`}>
+            {filteredTasks.map((task) => (
+              <div
+                key={task.id}
+                className="transition-all duration-300 hover:scale-[1.01]"
+              >
+                <TaskCard
+                  task={task}
+                  onEdit={handleEditTask}
+                  onDelete={handleDeleteTask}
+                  onComplete={handleMarkComplete}
+                  onAddSubtask={() => handleAddSubtask(task)}
+                  onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
+                  onDeleteSubtask={handleDeleteSubtask}
+                  onUpdateSubtask={handleUpdateSubtask}
+                />
               </div>
-            ) : (
-              <p className="text-sm italic text-gray-300">No tasks to show.</p>
-            )}
+            ))}
           </div>
-        );
-      })}
+        ) : (
+          <p className="text-sm italic text-gray-300">No tasks to show.</p>
+        )}
+      </div>
 
       {/* Global Add Task Button */}
       <button
