@@ -4,14 +4,14 @@ import Sidebar from "./components/Sidebar";
 import TimeframeView from "./components/TimeframeView";
 import KanbanView from "./components/KanbanView";
 import TaskView from "./components/TaskView";
-import ArchivedTasks from "./components/ArchivedTasks"; // ✅ NEW
+import ArchivedTasks from "./components/ArchivedTasks"; // ✅ New import
 
 function App() {
   const [view, setView] = useState("task");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const { tasks, clearAllTasks } = useLocalStorageTasks("tasks");
+  const { tasks, setTasks, clearAllTasks } = useLocalStorageTasks("tasks");
 
-  // Handle sidebar toggle
+  // Handle sidebar toggle for layout
   useEffect(() => {
     const handleSidebarToggle = (event) => {
       setIsSidebarCollapsed(event.detail.isCollapsed);
@@ -46,31 +46,69 @@ function App() {
     window.location.reload();
   };
 
-  // Get recent tasks (last 5, sorted by createdAt)
+  // Edit, delete, and archive handlers
+  const handleEdit = (taskId, updatedData) => {
+    setTasks(
+      tasks.map((task) =>
+        task.id === taskId ? { ...task, ...updatedData } : task
+      )
+    );
+  };
+
+  const handleDelete = (taskId) => {
+    setTasks(tasks.filter((task) => task.id !== taskId));
+  };
+
+  const handleArchive = (taskId) => {
+    setTasks(
+      tasks.map((task) =>
+        task.id === taskId ? { ...task, archived: !task.archived } : task
+      )
+    );
+  };
+
+  // Get recent tasks (last 5, not archived, sorted by createdAt)
   const recentTasks = tasks
+    .filter((task) => !task.archived)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 5);
 
   return (
     <div className="flex min-h-screen bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
-      <Sidebar
-        currentView={view}
-        setView={setView}
-        recentTasks={recentTasks}
-      />
+      <Sidebar currentView={view} setView={setView} recentTasks={recentTasks} />
       <main
         className={`flex-grow p-6 overflow-y-auto transition-all duration-300 ${
           isSidebarCollapsed ? "ml-16" : "ml-64"
         } bg-gray-800 dark:bg-gray-950`}
       >
         {view === "task" ? (
-          <TaskView />
+          <TaskView
+            tasks={tasks}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onArchive={handleArchive}
+          />
         ) : view === "timeframe" ? (
-          <TimeframeView />
+          <TimeframeView
+            tasks={tasks}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onArchive={handleArchive}
+          />
         ) : view === "kanban" ? (
-          <KanbanView />
-        ) : view === "archived" ? ( // ✅ NEW CASE
-          <ArchivedTasks />
+          <KanbanView
+            tasks={tasks}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onArchive={handleArchive}
+          />
+        ) : view === "archived" ? (
+          <ArchivedTasks
+            tasks={tasks}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onArchive={handleArchive}
+          />
         ) : null}
       </main>
       <button

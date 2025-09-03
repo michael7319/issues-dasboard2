@@ -1,5 +1,12 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { Calendar, Kanban, ChevronLeft, ChevronRight, List } from "lucide-react";
+import {
+  Calendar,
+  Kanban,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  Archive,
+} from "lucide-react";
 import useLocalStorageTasks from "../hooks/use-tasks";
 import users from "../data/users";
 
@@ -14,7 +21,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
       const stored = JSON.parse(localStorage.getItem("tasks") || "[]");
       setLocalRecentTasks(
         stored
-          .filter((task) => !task.completed)
+          .filter((task) => !task.completed && !task.archived) // ✅ exclude archived
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 5)
       );
@@ -23,7 +30,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
     // Initial load
     handleStorageChange();
 
-    // Listen for storage changes (e.g., from other components)
+    // Listen for storage changes
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
@@ -60,6 +67,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
         }
         const updatedTasks = [newTask, ...prev.filter((t) => !t.completed)];
         return updatedTasks
+          .filter((t) => !t.archived) // ✅ exclude archived here too
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 5);
       });
@@ -67,7 +75,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
     [saveTask]
   );
 
-  // Listen for task updates from other components
+  // Listen for task updates
   useEffect(() => {
     const handleTaskAdded = (event) => {
       if (event.detail?.task) {
@@ -90,7 +98,9 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
       <div className="flex items-center justify-between mb-8">
         {!isCollapsed && (
           <div className="text-center">
-            <h2 className="text-2xl font-bold text-yellow-600">Issues Dashboard</h2>
+            <h2 className="text-2xl font-bold text-yellow-600">
+              Issues Dashboard
+            </h2>
             <p className="text-orange-600 text-sm">Manage your tasks</p>
           </div>
         )}
@@ -148,7 +158,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
             <span className="text-sm font-medium">Task View</span>
           )}
         </button>
-        
+
         <button
           onClick={() => handleNavigation("timeframe")}
           className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center ${
@@ -165,7 +175,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
             <span className="text-sm font-medium">Timeframe View</span>
           )}
         </button>
-        
+
         <button
           onClick={() => handleNavigation("kanban")}
           className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center ${
@@ -177,14 +187,32 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
         >
           <Kanban size={20} className={isCollapsed ? "" : "mr-2"} />
           {isCollapsed ? (
-            <span className="text-xs font-medium">Kanban</span>
+            <span className="text-xs font-medium">Knbn</span>
           ) : (
             <span className="text-sm font-medium">Kanban View</span>
           )}
         </button>
+
+        {/* ✅ Archived Tasks */}
+        <button
+          onClick={() => handleNavigation("archived")}
+          className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center ${
+            currentView === "archived"
+              ? "bg-blue-700 text-white font-semibold shadow-md"
+              : "bg-white text-blue-800 hover:bg-blue-100"
+          } ${isCollapsed ? "justify-center" : ""}`}
+          aria-label="Archived Tasks"
+        >
+          <Archive size={20} className={isCollapsed ? "" : "mr-2"} />
+          {isCollapsed ? (
+            <span className="text-xs font-medium">Arcv</span>
+          ) : (
+            <span className="text-sm font-medium">Archived Tasks</span>
+          )}
+        </button>
       </nav>
 
-      {/* Recently Added Tasks Section with Scroll Wheel */}
+      {/* Recently Added Tasks Section */}
       <div className="mt-auto">
         {!isCollapsed && (
           <>
@@ -204,9 +232,9 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
               Recently Added
             </h3>
             {localRecentTasks.length > 0 ? (
-              <div 
+              <div
                 className="space-y-2 max-h-64 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-blue-400 scrollbar-track-blue-100 scrollbar-thumb-rounded-full"
-                style={{ scrollbarWidth: 'thin' }}
+                style={{ scrollbarWidth: "thin" }}
               >
                 {localRecentTasks.map((task) => (
                   <div
