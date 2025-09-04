@@ -74,8 +74,8 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       setDueTime(sch.dueTime || "");
       setDueWeekday(typeof sch.dueWeekday === "number" ? sch.dueWeekday : 1);
 
-      if (sch.dueDate) {
-        setDueDateAbs(sch.dueDate);
+      if (sch.dueAt) {
+        setDueDateAbs(sch.dueAt.split("T")[0]); // ensure YYYY-MM-DD only
       } else {
         setDueDateAbs("");
       }
@@ -137,7 +137,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       return {
         mode: "due",
         reset: "none",
-        dueDate: dueDateAbs, // YYYY-MM-DD only
+        dueAt: dueDateAbs, // use consistent key `dueAt`
       };
     }
 
@@ -147,13 +147,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
   const handleSubmit = () => {
     if (!title.trim() || !mainAssignee) return;
 
-    let finalcountdown = new Date();
-    let totalSeconds = 5 * 60;
-    finalcountdown.setSeconds(finalcountdown.getSeconds() + totalSeconds);
-
     const taskData = {
-      //dueDate: Date.now(),
-      countdown: finalcountdown,
       id: taskToEdit?.id || Date.now(),
       title: title.trim(),
       description: description.trim(),
@@ -328,35 +322,38 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
           </div>
 
           {/* Countdown */}
-          <div
-            className={`grid grid-cols-2 gap-2 mb-2 ${
-              showCountdownInputs ? "" : "opacity-50"
-            }`}
-          >
-            <Input
-              type="number"
-              min={0}
-              disabled={!showCountdownInputs}
-              value={cdHours}
-              onChange={(e) => setCdHours(parseInt(e.target.value || 0, 10))}
-              placeholder="Hours"
-              className="p-1 text-sm"
-            />
-            <Input
-              type="number"
-              min={0}
-              max={59}
-              disabled={!showCountdownInputs}
-              value={cdMinutes}
-              onChange={(e) =>
-                setCdMinutes(
-                  Math.min(59, Math.max(0, parseInt(e.target.value || 0, 10)))
-                )
-              }
-              placeholder="Minutes"
-              className="p-1 text-sm"
-            />
-          </div>
+          {showCountdownInputs && (
+            <div className="mb-2">
+              <Label className="text-xs block mb-1">
+                Countdown (Hours / Minutes)
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  value={cdHours}
+                  onChange={(e) =>
+                    setCdHours(Math.max(0, parseInt(e.target.value || 0, 10)))
+                  }
+                  placeholder="Hours"
+                  className="p-1 text-sm"
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={cdMinutes}
+                  onChange={(e) =>
+                    setCdMinutes(
+                      Math.min(59, Math.max(0, parseInt(e.target.value || 0, 10)))
+                    )
+                  }
+                  placeholder="Minutes"
+                  className="p-1 text-sm"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Daily/Weekly due time */}
           {isRecurring && (

@@ -22,6 +22,16 @@ import { z } from "zod";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
 export default function AddSubtaskModal({
   open,
   onClose,
@@ -37,6 +47,11 @@ export default function AddSubtaskModal({
     mainAssignee: z.string().min(1, { message: "Main assignee is required" }),
     supportingAssignees: z.array(z.string()).optional(),
     completed: z.boolean().optional(),
+    scheduleMode: z.enum(["countdown", "due", "none"]).optional(),
+    cdHours: z.string().optional(),
+    cdMinutes: z.string().optional(),
+    dueAt: z.string().optional(),
+    dueWeekday: z.string().optional(),
   });
 
   const form = useForm({
@@ -46,31 +61,66 @@ export default function AddSubtaskModal({
       mainAssignee: "",
       supportingAssignees: [],
       completed: false,
+      scheduleMode: "none",
+      cdHours: "",
+      cdMinutes: "",
+      dueAt: "",
+      dueWeekday: "0",
     },
   });
 
   useEffect(() => {
-    console.log("Modal opened with editingSubtask:", editingSubtask);
     if (open) {
+      const sch = editingSubtask?.schedule || {};
+      const total = sch.countdownSeconds ?? 0;
+
       form.reset({
         title: editingSubtask?.title || "",
-        mainAssignee: editingSubtask?.mainAssignee ? String(editingSubtask.mainAssignee) : "",
+        mainAssignee: editingSubtask?.mainAssignee
+          ? String(editingSubtask.mainAssignee)
+          : "",
         supportingAssignees: editingSubtask?.supportingAssignees?.map(String) || [],
         completed: editingSubtask?.completed || false,
+        scheduleMode: sch.mode || "none",
+        cdHours: sch.mode === "countdown" ? String(Math.floor(total / 3600)) : "",
+        cdMinutes: sch.mode === "countdown" ? String(Math.floor((total % 3600) / 60)) : "",
+        dueAt: sch.dueAt || "",
+        dueWeekday: sch.dueWeekday?.toString() || "0",
       });
     }
   }, [open, editingSubtask, form]);
 
   const handleSubmit = (values) => {
+    let schedule = null;
+
+    if (values.scheduleMode === "countdown") {
+      const totalSeconds =
+        Math.max(0, parseInt(values.cdHours || "0", 10)) * 3600 +
+        Math.max(0, parseInt(values.cdMinutes || "0", 10)) * 60;
+
+      if (totalSeconds > 0) {
+        schedule = {
+          mode: "countdown",
+          countdownSeconds: totalSeconds,
+          countdownStartAt: new Date().toISOString(),
+        };
+      }
+    } else if (values.scheduleMode === "due") {
+      schedule = {
+        mode: "due",
+        dueAt: values.dueAt || null,
+        dueWeekday: values.dueWeekday ? Number(values.dueWeekday) : null,
+      };
+    }
+
     const subtaskData = {
       id: editingSubtask?.id || Date.now(),
       title: values.title,
       completed: values.completed,
       mainAssignee: Number(values.mainAssignee),
       supportingAssignees: values.supportingAssignees.map(Number),
+      schedule,
     };
-
-    console.log("Submitting subtask data:", subtaskData);
 
     if (isEditMode) {
       onUpdate(parentTask.id, subtaskData);
@@ -82,7 +132,6 @@ export default function AddSubtaskModal({
   };
 
   const handleClose = () => {
-    console.log("Closing modal");
     form.reset();
     onClose();
   };
@@ -91,7 +140,6 @@ export default function AddSubtaskModal({
     <Dialog
       open={open}
       onOpenChange={(openState) => {
-        console.log("Dialog open change:", openState);
         if (!openState) {
           handleClose();
         }
@@ -107,9 +155,7 @@ export default function AddSubtaskModal({
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
           {/* Title Input */}
           <div className="space-y-2">
-            <Label htmlFor="title" className="text-right">
-              Title *
-            </Label>
+            <Label htmlFor="title">Title *</Label>
             <Input
               id="title"
               placeholder="Enter subtask title"
@@ -117,29 +163,17 @@ export default function AddSubtaskModal({
               className={form.formState.errors.title ? "border-red-500" : ""}
               required
             />
-            {form.formState.errors.title && (
-              <p className="text-red-500 text-xs">{form.formState.errors.title.message}</p>
-            )}
           </div>
 
           {/* Main Assignee Select */}
           <div className="space-y-2">
-            <Label htmlFor="mainAssignee" className="text-right">
-              Main Assignee *
-            </Label>
+            <Label htmlFor="mainAssignee">Main Assignee *</Label>
             <Controller
               name="mainAssignee"
               control={form.control}
               render={({ field }) => (
-                <Select 
-                  value={field.value} 
-                  onValueChange={field.onChange}
-                  required
-                >
-                  <SelectTrigger 
-                    id="mainAssignee" 
-                    className={form.formState.errors.mainAssignee ? "border-red-500" : ""}
-                  >
+                <Select value={field.value} onValueChange={field.onChange} required>
+                  <SelectTrigger id="mainAssignee">
                     <SelectValue placeholder="Select main assignee" />
                   </SelectTrigger>
                   <SelectContent>
@@ -152,14 +186,11 @@ export default function AddSubtaskModal({
                 </Select>
               )}
             />
-            {form.formState.errors.mainAssignee && (
-              <p className="text-red-500 text-xs">{form.formState.errors.mainAssignee.message}</p>
-            )}
           </div>
 
           {/* Supporting Assignees */}
           <div className="space-y-2">
-            <Label className="text-right">Supporting Assignees</Label>
+            <Label>Supporting Assignees</Label>
             <Controller
               name="supportingAssignees"
               control={form.control}
@@ -180,7 +211,7 @@ export default function AddSubtaskModal({
                       />
                       <label
                         htmlFor={`supporting-${user.id}`}
-                        className="text-sm font-medium leading-none cursor-pointer peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        className="text-sm font-medium leading-none cursor-pointer"
                       >
                         {user.fullName}
                       </label>
@@ -190,6 +221,80 @@ export default function AddSubtaskModal({
               )}
             />
           </div>
+
+          {/* Schedule Mode */}
+          <div className="space-y-2">
+            <Label>Schedule</Label>
+            <Controller
+              name="scheduleMode"
+              control={form.control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="countdown">Countdown</SelectItem>
+                    <SelectItem value="due">Due Date</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
+          {/* Countdown Fields */}
+          {form.watch("scheduleMode") === "countdown" && (
+            <div>
+              <Label className="text-xs block mb-1">Countdown (Hours / Minutes)</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="Hours"
+                  {...form.register("cdHours")}
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  max={59}
+                  placeholder="Minutes"
+                  {...form.register("cdMinutes")}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Due Date + Weekly Repeat side by side */}
+          {form.watch("scheduleMode") === "due" && (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="dueAt">Due Date</Label>
+                <Input id="dueAt" type="date" {...form.register("dueAt")} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dueWeekday">Weekly Repeat</Label>
+                <Controller
+                  name="dueWeekday"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select weekday" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {WEEKDAYS.map((day, idx) => (
+                          <SelectItem key={idx} value={String(idx)}>
+                            {day}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="gap-2 sm:gap-0 pt-4">
             <Button
