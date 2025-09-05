@@ -54,7 +54,9 @@ export default function TaskView() {
     });
 
     // Dispatch taskAdded event for Sidebar to update recent tasks
-    window.dispatchEvent(new CustomEvent("taskAdded", { detail: { task: newTask } }));
+    window.dispatchEvent(
+      new CustomEvent("taskAdded", { detail: { task: newTask } })
+    );
 
     setEditingTask(null);
     setIsModalOpen(false);
@@ -175,17 +177,29 @@ export default function TaskView() {
               : "all"
           }
           onChange={(e) => handleUnifiedFilterChange(e.target.value)}
-          className="relative p-2 pr-8 text-sm text-black bg-yellow-500 border border-blue-300 rounded appearance-none"
+          className="relative p-2 pr-8 text-sm text-black bg-yellow-200 border border-blue-300 rounded appearance-none"
         >
-          <option value="all">All Tasks</option>
+          <option value="all" className="bg-blue-200">
+            All Tasks
+          </option>
           <optgroup label="Priority">
-            <option value="priority:High">🔥 High</option>
-            <option value="priority:Medium">⚠️ Medium</option>
-            <option value="priority:Low">✅ Low</option>
+            <option value="priority:High" className="bg-blue-200">
+              🔥 High
+            </option>
+            <option value="priority:Medium" className="bg-blue-200">
+              ⚠️ Medium
+            </option>
+            <option value="priority:Low" className="bg-blue-200">
+              ✅ Low
+            </option>
           </optgroup>
           <optgroup label="Assignee">
             {users.map((u) => (
-              <option key={u.id} value={`assignee:${u.id}`}>
+              <option
+                key={u.id}
+                value={`assignee:${u.id}`}
+                className="bg-blue-200"
+              >
                 {u.initials} — {u.fullName}
               </option>
             ))}

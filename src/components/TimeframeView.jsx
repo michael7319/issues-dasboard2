@@ -200,7 +200,9 @@ export default function TimeframeView() {
               <span className="flex items-center gap-2">
                 {tf === "all"
                   ? "All"
-                  : `${getIcon(tf)} ${tf.charAt(0).toUpperCase() + tf.slice(1)}`}
+                  : `${getIcon(tf)} ${
+                      tf.charAt(0).toUpperCase() + tf.slice(1)
+                    }`}
                 {tf !== "all" && (
                   <span className="bg-black/30 px-2 py-1 rounded-full text-xs font-semibold">
                     {groups[tf].length}
@@ -220,17 +222,29 @@ export default function TimeframeView() {
               : "all"
           }
           onChange={(e) => handleUnifiedFilterChange(e.target.value)}
-          className="relative p-2 pr-8 text-sm text-black bg-yellow-500 border border-blue-300 rounded appearance-none"
+          className="relative p-2 pr-8 text-sm text-black bg-yellow-200 border border-blue-300 rounded appearance-none"
         >
-          <option value="all">All Tasks</option>
+          <option value="all" className="bg-blue-200">
+            All Tasks
+          </option>
           <optgroup label="Priority">
-            <option value="priority:High">🔥 High</option>
-            <option value="priority:Medium">⚠️ Medium</option>
-            <option value="priority:Low">✅ Low</option>
+            <option value="priority:High" className="bg-blue-200">
+              🔥 High
+            </option>
+            <option value="priority:Medium" className="bg-blue-200">
+              ⚠️ Medium
+            </option>
+            <option value="priority:Low" className="bg-blue-200">
+              ✅ Low
+            </option>
           </optgroup>
           <optgroup label="Assignee">
             {users.map((u) => (
-              <option key={u.id} value={`assignee:${u.id}`}>
+              <option
+                key={u.id}
+                value={`assignee:${u.id}`}
+                className="bg-blue-200"
+              >
                 {u.initials} — {u.fullName}
               </option>
             ))}
@@ -252,7 +266,8 @@ export default function TimeframeView() {
 
       {/* Task Groups */}
       {Object.entries(groups).map(([type, taskList]) => {
-        if (selectedTimeframe !== "all" && selectedTimeframe !== type) return null;
+        if (selectedTimeframe !== "all" && selectedTimeframe !== type)
+          return null;
         const filtered = taskList.filter(filterTask);
 
         return (
@@ -278,7 +293,9 @@ export default function TimeframeView() {
                       onDelete={handleDeleteTask}
                       onComplete={handleMarkComplete}
                       onAddSubtask={() => handleAddSubtask(task)}
-                      onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
+                      onEditSubtask={(subtask) =>
+                        handleEditSubtask(task, subtask)
+                      }
                       onDeleteSubtask={handleDeleteSubtask}
                       onUpdateSubtask={handleUpdateSubtask}
                     />

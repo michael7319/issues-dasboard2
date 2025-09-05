@@ -155,9 +155,13 @@ function SubtaskCard({
 
   return (
     <div
-      className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md"
+      className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md cursor-pointer"
       onMouseEnter={() => setHoveredSubtaskId(sub.id)}
       onMouseLeave={() => setHoveredSubtaskId(null)}
+      onClick={(e) => {
+        e.stopPropagation(); // ✅ prevent bubbling to TaskCard
+        onEditSubtask?.(sub);
+      }}
     >
       <div className="absolute flex justify-between items-center top-1 left-1 right-1 z-30">
         <span
@@ -281,7 +285,10 @@ export default function TaskCard({
   };
 
   return (
-    <div className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px]">
+    <div
+      className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px] cursor-pointer"
+      onClick={() => onEdit(task)}   // ✅ Click task card = edit modal
+    >
       <div
         className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md"
         onMouseEnter={() => setIsHovered(true)}
@@ -289,7 +296,7 @@ export default function TaskCard({
       >
         {/* Top Buttons Row */}
         <div className="absolute flex justify-between items-center top-1 left-1 right-1 px-1 z-30">
-          <button type="button" title="Archive">
+          <button type="button" title="Archive" onClick={(e) => e.stopPropagation()}>
             <Archive size={12} className="text-gray-400 hover:text-yellow-400" />
           </button>
           <div className="flex gap-1">
@@ -343,7 +350,10 @@ export default function TaskCard({
 
         {/* Status + Add Subtask */}
         <div className="flex items-center justify-between mt-1">
-          <label className="flex items-center gap-1 text-[10px] cursor-pointer">
+          <label
+            className="flex items-center gap-1 text-[10px] cursor-pointer"
+            onClick={(e) => e.stopPropagation()}
+          >
             <input
               type="checkbox"
               checked={isCompleted}
