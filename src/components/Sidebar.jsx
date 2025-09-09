@@ -97,20 +97,24 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
   return (
     <aside
       key={localTheme} // Force re-render on local theme change
-      className={`fixed top-0 left-0 h-full transition-all duration-300 ease-in-out ${
+      className={`fixed top-0 left-0 h-full overflow-y-auto transition-all duration-300 ease-in-out ${
         isCollapsed ? "w-16" : "w-64"
       } ${localTheme === "light" ? "bg-gradient-to-b from-gray-700 to-gray-800" : "bg-gradient-to-b from-blue-100 to-blue-200"} p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
       role="navigation"
       aria-label="Main navigation"
+      style={{ scrollbarWidth: "none" }} // Hide scrollbar for Firefox
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         {!isCollapsed && (
           <div className="text-center">
-            <h2 className="text-2xl font-bold text-red-600">
-              Issues Dashboard
-            </h2>
-            <p className="text-red-300 text-sm">Manage your tasks</p>
+            <img src="/BBC Logo.png" alt="Logo" className="mx-auto mb-2 h-15 w-25" />
+            <div className="p-2 rounded-md">
+              <h2 className="text-2xl font-bold text-yellow-600">
+                Issues Dashboard
+              </h2>
+              <p className="text-orange-600 text-sm">Manage your tasks</p>
+            </div>
           </div>
         )}
         <button
@@ -196,10 +200,10 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
       </nav>
 
       {/* Recently Added Tasks Section */}
-      <div className="mt-auto">
+      <div className="mt-4"> {/* Added space with mt-4 */}
         {!isCollapsed && (
           <>
-            <h3 className="font-semibold text-red-500 mb-3 text-lg flex items-center gap-2">
+            <h3 className="font-semibold text-blue-800 mb-3 text-lg flex items-center gap-2">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5"
@@ -216,8 +220,8 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
             </h3>
             {localRecentTasks.length > 0 ? (
               <div
-                className="space-y-2 max-h-64 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-blue-400 scrollbar-track-blue-100 scrollbar-thumb-rounded-full"
-                style={{ scrollbarWidth: "thin" }}
+                className="space-y-2 max-h-64 overflow-y-auto pr-2"
+                style={{ scrollbarWidth: "none" }} // Hide scrollbar for Firefox
               >
                 {localRecentTasks.map((task) => (
                   <div

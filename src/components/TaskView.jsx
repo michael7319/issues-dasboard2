@@ -167,7 +167,7 @@ export default function TaskView({ theme }) {
   return (
     <div className="relative flex flex-col p-3 gap-4">
       {/* Filters & search controls */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow bg-gray-900/80 backdrop-blur-sm">
+      <div className={`sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow ${theme === "dark" ? "bg-blue-950" : "bg-gray-900/80"} backdrop-blur-sm`}>
         <select
           value={
             priorityFilter !== "all"
@@ -208,6 +208,7 @@ export default function TaskView({ theme }) {
 
         {/* Search bar */}
         <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-200">Search:</span>
           <input
             type="text"
             value={searchQuery}

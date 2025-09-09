@@ -177,7 +177,7 @@ export default function KanbanView({ theme }) {
   }
 
   return (
-    <div className={`flex flex-col p-4 ${theme === "light" ? "bg-gray-300" : "bg-gray-800"} rounded-lg shadow-lg`}>
+    <div className={`flex flex-col p-4 ${theme === "light" ? "bg-gray-500" : "bg-gray-800"} rounded-lg shadow-lg`}>
       <button
         type="button"
         onClick={() => {
