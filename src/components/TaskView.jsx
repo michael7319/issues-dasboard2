@@ -5,7 +5,7 @@ import AddSubtaskModal from "./AddSubtaskModal";
 import users from "../data/users";
 import defaultTasks from "../data/tasks";
 
-export default function TaskView() {
+export default function TaskView({ theme }) {
   const [tasks, setTasks] = useState([]);
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -208,7 +208,6 @@ export default function TaskView() {
 
         {/* Search bar */}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-200">Search:</span>
           <input
             type="text"
             value={searchQuery}
@@ -220,7 +219,7 @@ export default function TaskView() {
       </div>
 
       {/* Task List */}
-      <div className="p-3 rounded-lg shadow-md bg-white/10 animate-fadeIn">
+      <div className={`p-3 rounded-lg shadow-md ${theme === "light" ? "bg-gray-300" : "bg-white/10"} animate-fadeIn`}>
         {filteredTasks.length > 0 ? (
           <div className={`flex gap-2 flex-wrap ${gapClass.medium}`}>
             {filteredTasks.map((task) => (
@@ -278,7 +277,7 @@ export default function TaskView() {
           setTasks((prev) =>
             prev.map((task) =>
               task.id === taskId
-                ? { ...task, subtasks: [...(task.subtasks || []), subtask] }
+                ? { ...task, subtasks: [...(task.subtasks || [], subtask)] }
                 : task
             )
           );

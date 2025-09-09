@@ -10,6 +10,7 @@ function App() {
   const [view, setView] = useState("task");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const { tasks, setTasks, clearAllTasks } = useLocalStorageTasks("tasks");
+  const [theme, setTheme] = useState("light"); // New state for theme
 
   // Handle sidebar toggle for layout
   useEffect(() => {
@@ -46,6 +47,11 @@ function App() {
     window.location.reload();
   };
 
+  // Toggle theme between light and dark
+  const toggleTheme = () => {
+    setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
+  };
+
   // Edit, delete, and archive handlers
   const handleEdit = (taskId, updatedData) => {
     setTasks(
@@ -74,29 +80,22 @@ function App() {
     .slice(0, 5);
 
   return (
-    <div className="flex min-h-screen bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
-      <Sidebar currentView={view} setView={setView} recentTasks={recentTasks} />
+    <div className={`flex min-h-screen ${theme === "light" ? "bg-white text-gray-800" : "bg-gray-950 text-gray-200"}`}>
+      <Sidebar currentView={view} setView={setView} recentTasks={recentTasks} theme={theme} />
       <main
-        className={`flex-grow p-6 overflow-y-auto transition-all duration-300 ${
-          isSidebarCollapsed ? "ml-16" : "ml-64"
-        } bg-gray-800 dark:bg-gray-950`}
+        className={`flex-grow p-6 overflow-y-auto transition-all duration-300 ${isSidebarCollapsed ? "ml-16" : "ml-64"} ${theme === "light" ? "bg-gray-100" : "bg-gray-900"}`}
       >
         {view === "task" ? (
-          <TaskView
-            tasks={tasks}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onArchive={handleArchive}
-          />
+          <TaskView theme={theme} />
         ) : view === "timeframe" ? (
-          <TimeframeView
+          <TimeframeView theme={theme}
             tasks={tasks}
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}
           />
         ) : view === "kanban" ? (
-          <KanbanView
+          <KanbanView theme={theme}
             tasks={tasks}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -117,6 +116,13 @@ function App() {
         className="fixed bottom-4 left-4 bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded shadow-lg z-50"
       >
         Clear All Tasks
+      </button>
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className={`fixed top-4 right-4 p-2 rounded-full shadow-lg z-50 transition-all duration-300 ${theme === "light" ? "bg-yellow-200 hover:bg-yellow-300 text-gray-800" : "bg-gray-700 hover:bg-gray-600 text-gray-200"}`}
+      >
+        {theme === "light" ? "🌞" : "🌙"}
       </button>
     </div>
   );

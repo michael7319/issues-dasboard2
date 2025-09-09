@@ -7,7 +7,7 @@ import AddSubtaskModal from "./AddSubtaskModal";
 import TaskCard from "./TaskCard";
 import defaultTasks from "../data/tasks";
 
-export default function KanbanView() {
+export default function KanbanView({ theme }) {
   const [tasks, setTasks] = useState([]);
   const [showSubtaskModal, setShowSubtaskModal] = useState(false);
   const [taskToSubtask, setTaskToSubtask] = useState(null);
@@ -105,7 +105,16 @@ export default function KanbanView() {
       const newCompletedStatus = overContainer === "Done";
       setTasks((prev) =>
         prev.map((task) =>
-          task.id === activeId ? { ...task, completed: newCompletedStatus } : task
+          task.id === activeId
+            ? {
+                ...task,
+                completed: newCompletedStatus,
+                subtasks: (task.subtasks || []).map((subtask) => ({
+                  ...subtask,
+                  completed: newCompletedStatus,
+                })),
+              }
+            : task
         )
       );
     } catch (err) {
@@ -140,8 +149,12 @@ export default function KanbanView() {
   };
 
   const columns = {
-    Todo: tasks.filter((t) => !t.completed),
-    Done: tasks.filter((t) => t.completed),
+    Todo: tasks.filter(
+      (t) => !t.completed || (t.subtasks && t.subtasks.some((s) => !s.completed))
+    ),
+    Done: tasks.filter(
+      (t) => t.completed && (!t.subtasks || t.subtasks.every((s) => s.completed))
+    ),
   };
 
   if (error) {
@@ -164,7 +177,7 @@ export default function KanbanView() {
   }
 
   return (
-    <div className="flex flex-col p-4 min-h-screen bg-gray-900/80 backdrop-blur-sm">
+    <div className={`flex flex-col p-4 ${theme === "light" ? "bg-gray-300" : "bg-gray-800"} rounded-lg shadow-lg`}>
       <button
         type="button"
         onClick={() => {
@@ -183,11 +196,11 @@ export default function KanbanView() {
             return (
               <div
                 key={status}
-                className="flex-1 min-w-[400px] p-4 rounded-xl shadow-lg bg-gradient-to-b from-gray-800 to-gray-700 transition-all duration-300"
+                className={`flex-1 min-w-[400px] p-4 rounded-xl shadow-lg ${theme === "light" ? "bg-gray-300" : "bg-gray-700"} transition-all duration-300`}
               >
-                <h2 className="mb-4 text-xl font-bold text-white flex items-center gap-2">
+                <h2 className={`mb-4 text-xl font-bold flex items-center gap-2 ${theme === "light" ? "text-black" : "text-white"}`}>
                   {status === "Todo" ? "📋" : "✅"} {status}
-                  <span className="ml-2 text-sm text-gray-300">({taskList.length})</span>
+                  <span className={`ml-2 text-sm ${theme === "light" ? "text-black" : "text-gray-300"}`}> ({taskList.length})</span>
                 </h2>
                 <SortableContext id={status} items={taskList.map((task) => task.id)} strategy={verticalListSortingStrategy}>
                   <div className="grid grid-cols-2 gap-2">
@@ -307,7 +320,7 @@ export default function KanbanView() {
         onAdd={(taskId, subtask) =>
           setTasks(
             tasks.map((t) =>
-              t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), subtask] } : t
+              t.id === taskId ? { ...t, subtasks: [...(t.subtasks || [], subtask)] } : t
             )
           )
         }

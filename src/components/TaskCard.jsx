@@ -182,11 +182,17 @@ function SubtaskCard({
       </div>
 
       <div className="pt-4">
-        <label className="flex items-center gap-1 pr-8 cursor-pointer">
+        <label
+          className="flex items-center gap-1 pr-8 cursor-pointer"
+          onClick={(e) => e.stopPropagation()} // ✅ prevent label click from bubbling
+        >
           <input
             type="checkbox"
             checked={sub.completed}
-            onChange={handleSubtaskToggle}
+            onChange={(e) => {
+              e.stopPropagation(); // ✅ prevent checkbox click from bubbling
+              handleSubtaskToggle(e);
+            }}
             className="w-3 h-3 accent-green-500"
           />
           <span className={sub.completed ? "line-through text-gray-400" : ""}>
@@ -287,7 +293,7 @@ export default function TaskCard({
   return (
     <div
       className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px] cursor-pointer"
-      onClick={() => onEdit(task)}   // ✅ Click task card = edit modal
+      onClick={() => onEdit(task)} // ✅ Click task card = edit modal
     >
       <div
         className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md"

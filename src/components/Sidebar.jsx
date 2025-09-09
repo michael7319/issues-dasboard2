@@ -6,14 +6,16 @@ import {
   ChevronRight,
   List,
   Archive,
+  Plus,
 } from "lucide-react";
 import useLocalStorageTasks from "../hooks/use-tasks";
 import users from "../data/users";
 
-export default function Sidebar({ currentView, setView, recentTasks }) {
+export default function Sidebar({ currentView, setView, recentTasks, theme }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [localRecentTasks, setLocalRecentTasks] = useState(recentTasks || []);
   const { saveTask } = useLocalStorageTasks("tasks");
+  const [localTheme, setLocalTheme] = useState(theme); // Local theme state
 
   // Sync localRecentTasks with localStorage changes
   useEffect(() => {
@@ -21,7 +23,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
       const stored = JSON.parse(localStorage.getItem("tasks") || "[]");
       setLocalRecentTasks(
         stored
-          .filter((task) => !task.completed && !task.archived) // ✅ exclude archived
+          .filter((task) => !task.completed && !task.archived)
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 5)
       );
@@ -34,6 +36,12 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
+
+  // Sync local theme with prop
+  useEffect(() => {
+    setLocalTheme(theme);
+    console.log("Sidebar theme received:", theme);
+  }, [theme]);
 
   const toggleSidebar = useCallback(() => {
     setIsCollapsed((prev) => {
@@ -67,7 +75,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
         }
         const updatedTasks = [newTask, ...prev.filter((t) => !t.completed)];
         return updatedTasks
-          .filter((t) => !t.archived) // ✅ exclude archived here too
+          .filter((t) => !t.archived)
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 5);
       });
@@ -88,9 +96,10 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
 
   return (
     <aside
+      key={localTheme} // Force re-render on local theme change
       className={`fixed top-0 left-0 h-full transition-all duration-300 ease-in-out ${
         isCollapsed ? "w-16" : "w-64"
-      } bg-gradient-to-b from-blue-100 to-blue-200 p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
+      } ${localTheme === "light" ? "bg-gradient-to-b from-gray-700 to-gray-800" : "bg-gradient-to-b from-blue-100 to-blue-200"} p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
       role="navigation"
       aria-label="Main navigation"
     >
@@ -98,10 +107,10 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
       <div className="flex items-center justify-between mb-8">
         {!isCollapsed && (
           <div className="text-center">
-            <h2 className="text-2xl font-bold text-yellow-600">
+            <h2 className="text-2xl font-bold text-red-600">
               Issues Dashboard
             </h2>
-            <p className="text-orange-600 text-sm">Manage your tasks</p>
+            <p className="text-red-300 text-sm">Manage your tasks</p>
           </div>
         )}
         <button
@@ -120,23 +129,14 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
       {/* Add Task Button */}
       <button
         onClick={handleAddTask}
-        className={`w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-3 rounded-lg shadow-md transition-colors flex items-center ${
-          isCollapsed ? "justify-center" : "justify-center"
-        } gap-2 mb-8`}
+        className={`w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-3 rounded-lg shadow-md transition-colors flex items-center justify-center gap-2 mb-8 overflow-visible`}
         aria-label="Add new task"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="h-5 w-5"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path
-            fillRule="evenodd"
-            d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-            clipRule="evenodd"
-          />
-        </svg>
+        <Plus
+          size={isCollapsed ? 20 : 20}
+          className="text-white flex-shrink-0"
+          strokeWidth={2}
+        />
         {!isCollapsed && <span>Add New Task</span>}
       </button>
 
@@ -144,71 +144,54 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
       <nav className="flex flex-col gap-2">
         <button
           onClick={() => handleNavigation("task")}
-          className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center ${
+          className={`w-full px-4 py-3 rounded-lg transition-colors flex items-center ${
             currentView === "task"
               ? "bg-blue-700 text-white font-semibold shadow-md"
               : "bg-white text-blue-800 hover:bg-blue-100"
-          } ${isCollapsed ? "justify-center" : ""}`}
+          } ${isCollapsed ? "justify-center" : "justify-start"}`}
           aria-label="Task View"
         >
-          <List size={20} className={isCollapsed ? "" : "mr-2"} />
-          {isCollapsed ? (
-            <span className="text-xs font-medium">Task</span>
-          ) : (
-            <span className="text-sm font-medium">Task View</span>
-          )}
+          <List size={20} className="flex-shrink-0" />
+          {!isCollapsed && <span className="ml-2 text-sm font-medium">Task View</span>}
         </button>
 
         <button
           onClick={() => handleNavigation("timeframe")}
-          className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center ${
+          className={`w-full px-4 py-3 rounded-lg transition-colors flex items-center ${
             currentView === "timeframe"
               ? "bg-blue-700 text-white font-semibold shadow-md"
               : "bg-white text-blue-800 hover:bg-blue-100"
-          } ${isCollapsed ? "justify-center" : ""}`}
+          } ${isCollapsed ? "justify-center" : "justify-start"}`}
           aria-label="Timeframe View"
         >
-          <Calendar size={20} className={isCollapsed ? "" : "mr-2"} />
-          {isCollapsed ? (
-            <span className="text-xs font-medium">Time</span>
-          ) : (
-            <span className="text-sm font-medium">Timeframe View</span>
-          )}
+          <Calendar size={20} className="flex-shrink-0" />
+          {!isCollapsed && <span className="ml-2 text-sm font-medium">Timeframe View</span>}
         </button>
 
         <button
           onClick={() => handleNavigation("kanban")}
-          className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center ${
+          className={`w-full px-4 py-3 rounded-lg transition-colors flex items-center ${
             currentView === "kanban"
               ? "bg-blue-700 text-white font-semibold shadow-md"
               : "bg-white text-blue-800 hover:bg-blue-100"
-          } ${isCollapsed ? "justify-center" : ""}`}
+          } ${isCollapsed ? "justify-center" : "justify-start"}`}
           aria-label="Kanban View"
         >
-          <Kanban size={20} className={isCollapsed ? "" : "mr-2"} />
-          {isCollapsed ? (
-            <span className="text-xs font-medium">Knbn</span>
-          ) : (
-            <span className="text-sm font-medium">Kanban View</span>
-          )}
+          <Kanban size={20} className="flex-shrink-0" />
+          {!isCollapsed && <span className="ml-2 text-sm font-medium">Kanban View</span>}
         </button>
 
-        {/* ✅ Archived Tasks */}
         <button
           onClick={() => handleNavigation("archived")}
-          className={`w-full text-left px-4 py-3 rounded-lg transition-colors flex items-center ${
+          className={`w-full px-4 py-3 rounded-lg transition-colors flex items-center ${
             currentView === "archived"
               ? "bg-blue-700 text-white font-semibold shadow-md"
               : "bg-white text-blue-800 hover:bg-blue-100"
-          } ${isCollapsed ? "justify-center" : ""}`}
+          } ${isCollapsed ? "justify-center" : "justify-start"}`}
           aria-label="Archived Tasks"
         >
-          <Archive size={20} className={isCollapsed ? "" : "mr-2"} />
-          {isCollapsed ? (
-            <span className="text-xs font-medium">Arcv</span>
-          ) : (
-            <span className="text-sm font-medium">Archived Tasks</span>
-          )}
+          <Archive size={20} className="flex-shrink-0" />
+          {!isCollapsed && <span className="ml-2 text-sm font-medium">Archived Tasks</span>}
         </button>
       </nav>
 
@@ -216,7 +199,7 @@ export default function Sidebar({ currentView, setView, recentTasks }) {
       <div className="mt-auto">
         {!isCollapsed && (
           <>
-            <h3 className="font-semibold text-blue-800 mb-3 text-lg flex items-center gap-2">
+            <h3 className="font-semibold text-red-500 mb-3 text-lg flex items-center gap-2">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5"

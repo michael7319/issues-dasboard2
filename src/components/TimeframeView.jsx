@@ -5,7 +5,7 @@ import AddSubtaskModal from "./AddSubtaskModal";
 import users from "../data/users";
 import defaultTasks from "../data/tasks";
 
-export default function TimeframeView() {
+export default function TimeframeView({ theme }) {
   const [tasks, setTasks] = useState([]);
   const [selectedTimeframe, setSelectedTimeframe] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
@@ -188,27 +188,23 @@ export default function TimeframeView() {
   return (
     <div className="relative flex flex-col p-3 gap-4">
       {/* Filters & search controls */}
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow bg-gray-900/80 backdrop-blur-sm">
-        <div className="flex gap-2 overflow-x-auto">
+      <div className={`sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow ${theme === "dark" ? "bg-blue-950" : "bg-gray-900/80"} backdrop-blur-sm`}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-200">Timeframe:</span>
           {timeframes.map((tf) => (
             <button
               key={tf}
-              type="button"
               onClick={() => setSelectedTimeframe(tf)}
               className={tabClass(tf)}
             >
-              <span className="flex items-center gap-2">
-                {tf === "all"
-                  ? "All"
-                  : `${getIcon(tf)} ${
-                      tf.charAt(0).toUpperCase() + tf.slice(1)
-                    }`}
-                {tf !== "all" && (
-                  <span className="bg-black/30 px-2 py-1 rounded-full text-xs font-semibold">
-                    {groups[tf].length}
-                  </span>
-                )}
+              <span className="text-sm font-bold">
+                {tf.charAt(0).toUpperCase() + tf.slice(1)}
               </span>
+              {tf !== "all" && (
+                <span className="bg-black/30 px-2 py-1 rounded-full text-xs font-semibold">
+                  {groups[tf].length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -253,7 +249,6 @@ export default function TimeframeView() {
 
         {/* Search bar */}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-200">Search:</span>
           <input
             type="text"
             value={searchQuery}
@@ -273,9 +268,9 @@ export default function TimeframeView() {
         return (
           <div
             key={type}
-            className="p-3 rounded-lg shadow-md bg-white/10 animate-fadeIn"
+            className={`p-3 rounded-lg shadow-md ${theme === "light" ? "bg-gray-300" : "bg-white/10"} animate-fadeIn`}
           >
-            <h2 className="flex items-center gap-2 mb-3 text-lg font-semibold capitalize text-white">
+            <h2 className={`flex items-center gap-2 mb-3 text-lg font-semibold capitalize ${theme === "light" ? "text-black" : "text-white"}`}>
               {getIcon(type)} {type.charAt(0).toUpperCase() + type.slice(1)}{" "}
               Tasks
             </h2>
@@ -341,7 +336,7 @@ export default function TimeframeView() {
           setTasks((prev) =>
             prev.map((task) =>
               task.id === taskId
-                ? { ...task, subtasks: [...(task.subtasks || []), subtask] }
+                ? { ...task, subtasks: [...(task.subtasks || [], subtask)] }
                 : task
             )
           );
