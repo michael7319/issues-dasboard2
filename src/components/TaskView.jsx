@@ -83,7 +83,7 @@ export default function TaskView({ theme }) {
         task.id === taskId
           ? {
               ...task,
-              subtasks: task.subtasks.filter((s) => s.id !== subtaskId),
+              subtasks: (task.subtasks || []).filter((s) => s.id !== subtaskId),
             }
           : task
       )
@@ -96,7 +96,7 @@ export default function TaskView({ theme }) {
         task.id === taskId
           ? {
               ...task,
-              subtasks: task.subtasks.map((s) =>
+              subtasks: (task.subtasks || []).map((s) =>
                 s.id === subtaskId ? { ...s, ...updates } : s
               ),
             }
@@ -167,7 +167,11 @@ export default function TaskView({ theme }) {
   return (
     <div className="relative flex flex-col p-3 gap-4">
       {/* Filters & search controls */}
-      <div className={`sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow ${theme === "dark" ? "bg-blue-950" : "bg-gray-900/80"} backdrop-blur-sm`}>
+      <div
+        className={`sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow ${
+          theme === "dark" ? "bg-blue-950" : "bg-gray-900/80"
+        } backdrop-blur-sm`}
+      >
         <select
           value={
             priorityFilter !== "all"
@@ -220,7 +224,11 @@ export default function TaskView({ theme }) {
       </div>
 
       {/* Task List */}
-      <div className={`p-3 rounded-lg shadow-md ${theme === "light" ? "bg-gray-300" : "bg-white/10"} animate-fadeIn`}>
+      <div
+        className={`p-3 rounded-lg shadow-md ${
+          theme === "light" ? "bg-gray-300" : "bg-white/10"
+        } animate-fadeIn`}
+      >
         {filteredTasks.length > 0 ? (
           <div className={`flex gap-2 flex-wrap ${gapClass.medium}`}>
             {filteredTasks.map((task) => (
@@ -278,7 +286,7 @@ export default function TaskView({ theme }) {
           setTasks((prev) =>
             prev.map((task) =>
               task.id === taskId
-                ? { ...task, subtasks: [...(task.subtasks || [], subtask)] }
+                ? { ...task, subtasks: [...(task.subtasks || []), subtask] }
                 : task
             )
           );
@@ -291,7 +299,7 @@ export default function TaskView({ theme }) {
               task.id === taskId
                 ? {
                     ...task,
-                    subtasks: task.subtasks.map((s) =>
+                    subtasks: (task.subtasks || []).map((s) =>
                       s.id === subtask.id ? subtask : s
                     ),
                   }

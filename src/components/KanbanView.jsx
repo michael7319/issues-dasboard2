@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { DndContext, closestCenter, useSensor, useSensors, PointerSensor } from "@dnd-kit/core";
+import { DndContext, closestCenter, useSensor, useSensors, PointerSensor, useDroppable, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import AddTaskModal from "./AddTaskModal";
@@ -15,6 +15,8 @@ export default function KanbanView({ theme }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [error, setError] = useState(null);
+  const [activeId, setActiveId] = useState(null);
+  const [activeTask, setActiveTask] = useState(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -92,48 +94,157 @@ export default function KanbanView({ theme }) {
     setShowSubtaskModal(true);
   };
 
-  const handleDragEnd = (event) => {
-    try {
-      const { active, over } = event;
-      if (!over) return;
+  const handleDragStart = (event) => {
+    setActiveId(event.active.id);
+    const task = tasks.find(t => t.id === event.active.id);
+    setActiveTask(task);
+  };
 
-      const activeId = active.id;
-      const overContainer = over.data.current?.sortable.containerId;
+  const handleDragOver = (event) => {
+    const { active, over } = event;
+    
+    if (!over) return;
 
-      if (!overContainer) return;
+    const activeId = active.id;
+    const overId = over.id;
 
-      const newCompletedStatus = overContainer === "Done";
-      setTasks((prev) =>
-        prev.map((task) =>
-          task.id === activeId
-            ? {
-                ...task,
-                completed: newCompletedStatus,
-                subtasks: (task.subtasks || []).map((subtask) => ({
-                  ...subtask,
-                  completed: newCompletedStatus,
-                })),
-              }
-            : task
-        )
-      );
-    } catch (err) {
-      console.error("Error in drag-and-drop:", err);
-      setError(err.message);
+    if (activeId === overId) return;
+
+    // Determine what we're over
+    const overData = over.data?.current;
+    let overContainer = null;
+
+    if (overData?.type === 'container') {
+      overContainer = overId; // "Todo" or "Done"
+    } else if (overData?.sortable?.containerId) {
+      overContainer = overData.sortable.containerId;
+    } else {
+      // Check if we're over a task and determine its container
+      const overTask = tasks.find(t => t.id === overId);
+      if (overTask) {
+        overContainer = getTaskContainer(overTask);
+      }
     }
+
+    if (!overContainer) return;
+
+    const activeTask = tasks.find(t => t.id === activeId);
+    const activeContainer = getTaskContainer(activeTask);
+
+    if (activeContainer === overContainer) return;
+
+    // Move task between containers
+    setTasks((prev) => {
+      const activeIndex = prev.findIndex(t => t.id === activeId);
+      const overIndex = prev.findIndex(t => t.id === overId);
+      
+      if (activeIndex === -1) return prev;
+
+      const newTasks = [...prev];
+      const [movedTask] = newTasks.splice(activeIndex, 1);
+      
+      // Update completion status based on target container
+      movedTask.completed = overContainer === "Done";
+      if (movedTask.subtasks) {
+        movedTask.subtasks = movedTask.subtasks.map(sub => ({
+          ...sub,
+          completed: movedTask.completed
+        }));
+      }
+
+      // Insert at appropriate position
+      if (overIndex >= 0 && overIndex !== activeIndex) {
+        const adjustedIndex = overIndex > activeIndex ? overIndex - 1 : overIndex;
+        newTasks.splice(adjustedIndex, 0, movedTask);
+      } else {
+        // Add to end of target container
+        const targetTasks = newTasks.filter(t => getTaskContainer(t) === overContainer);
+        const lastTargetIndex = newTasks.lastIndexOf(targetTasks[targetTasks.length - 1]);
+        newTasks.splice(lastTargetIndex + 1, 0, movedTask);
+      }
+
+      return newTasks;
+    });
+  };
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    
+    setActiveId(null);
+    setActiveTask(null);
+    
+    if (!over) return;
+
+    const activeId = active.id;
+    const overId = over.id;
+
+    if (activeId === overId) return;
+
+    // Handle reordering within the same container
+    setTasks((prev) => {
+      const activeIndex = prev.findIndex(t => t.id === activeId);
+      const overIndex = prev.findIndex(t => t.id === overId);
+      
+      if (activeIndex === -1) return prev;
+
+      const activeTask = prev[activeIndex];
+      const activeContainer = getTaskContainer(activeTask);
+      
+      let overContainer = null;
+      const overData = over.data?.current;
+      
+      if (overData?.type === 'container') {
+        overContainer = overId;
+      } else if (overIndex >= 0) {
+        const overTask = prev[overIndex];
+        overContainer = getTaskContainer(overTask);
+      }
+
+      if (!overContainer) return prev;
+
+      // If same container, just reorder
+      if (activeContainer === overContainer && overIndex >= 0) {
+        const newTasks = [...prev];
+        const [movedTask] = newTasks.splice(activeIndex, 1);
+        newTasks.splice(overIndex, 0, movedTask);
+        return newTasks;
+      }
+
+      return prev;
+    });
+  };
+
+  const getTaskContainer = (task) => {
+    if (!task) return null;
+    const isCompleted = task.completed && (!task.subtasks || task.subtasks.every(s => s.completed));
+    return isCompleted ? "Done" : "Todo";
+  };
+
+  // Droppable container component
+  const DroppableContainer = ({ id, children }) => {
+    const { setNodeRef } = useDroppable({
+      id,
+      data: {
+        type: 'container',
+      },
+    });
+
+    return (
+      <div ref={setNodeRef} className="min-h-[200px] w-full">
+        {children}
+      </div>
+    );
   };
 
   const SortableTask = ({ task, index, ...props }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
       id: task.id,
-      data: { task },
     });
 
     const style = {
       transform: CSS.Transform.toString(transform),
       transition,
-      opacity: isDragging ? 0.75 : 1,
-      scale: isDragging ? 1.05 : 1,
+      opacity: isDragging ? 0.5 : 1,
     };
 
     return (
@@ -148,14 +259,12 @@ export default function KanbanView({ theme }) {
     return [taskList.slice(0, middle), taskList.slice(middle)];
   };
 
-  const columns = {
-    Todo: tasks.filter(
-      (t) => !t.completed || (t.subtasks && t.subtasks.some((s) => !s.completed))
-    ),
-    Done: tasks.filter(
-      (t) => t.completed && (!t.subtasks || t.subtasks.every((s) => s.completed))
-    ),
-  };
+  const todoTasks = tasks.filter(
+    (t) => !t.completed || (t.subtasks && t.subtasks.some((s) => !s.completed))
+  );
+  const doneTasks = tasks.filter(
+    (t) => t.completed && (!t.subtasks || t.subtasks.every((s) => s.completed))
+  );
 
   if (error) {
     return (
@@ -189,115 +298,131 @@ export default function KanbanView({ theme }) {
         + Add Task
       </button>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext 
+        sensors={sensors} 
+        collisionDetection={closestCenter} 
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
         <div className="flex gap-4 overflow-x-auto pb-4 w-full">
-          {Object.entries(columns).map(([status, taskList]) => {
+          {[
+            { status: "Todo", taskList: todoTasks },
+            { status: "Done", taskList: doneTasks }
+          ].map(({ status, taskList }) => {
             const [firstColumn, secondColumn] = splitTasks(taskList);
             return (
-              <div
-                key={status}
-                className={`flex-1 min-w-[400px] p-4 rounded-xl shadow-lg ${theme === "light" ? "bg-gray-300" : "bg-gray-700"} transition-all duration-300`}
-              >
-                <h2 className={`mb-4 text-xl font-bold flex items-center gap-2 ${theme === "light" ? "text-black" : "text-white"}`}>
-                  {status === "Todo" ? "📋" : "✅"} {status}
-                  <span className={`ml-2 text-sm ${theme === "light" ? "text-black" : "text-gray-300"}`}> ({taskList.length})</span>
-                </h2>
-                <SortableContext id={status} items={taskList.map((task) => task.id)} strategy={verticalListSortingStrategy}>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-2">
-                      {firstColumn.map((task, index) =>
-                        task.id ? (
-                          <SortableTask
-                            key={task.id}
-                            task={task}
-                            index={index}
-                            onEdit={(task) => {
-                              setEditingTask(task);
-                              setIsModalOpen(true);
-                            }}
-                            onDelete={(taskId) => setTasks(tasks.filter((t) => t.id !== taskId))}
-                            onAddSubtask={() => handleAddSubtask(task)}
-                            onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
-                            onComplete={(taskId, completed) =>
-                              setTasks(tasks.map((t) => (t.id === taskId ? { ...t, completed } : t)))
-                            }
-                            onDeleteSubtask={(taskId, subtaskId) =>
-                              setTasks(
-                                tasks.map((t) =>
-                                  t.id === taskId
-                                    ? { ...t, subtasks: t.subtasks.filter((s) => s.id !== subtaskId) }
-                                    : t
+              <DroppableContainer key={status} id={status}>
+                <div className={`flex-1 min-w-[400px] p-4 rounded-xl shadow-lg ${theme === "light" ? "bg-gray-300" : "bg-gray-700"} transition-all duration-300`}>
+                  <h2 className={`mb-4 text-xl font-bold flex items-center gap-2 ${theme === "light" ? "text-black" : "text-white"}`}>
+                    {status === "Todo" ? "📋" : "✅"} {status}
+                    <span className={`ml-2 text-sm ${theme === "light" ? "text-black" : "text-gray-300"}`}> ({taskList.length})</span>
+                  </h2>
+                  <SortableContext items={taskList.map((task) => task.id)} strategy={verticalListSortingStrategy}>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        {firstColumn.map((task, index) =>
+                          task.id ? (
+                            <SortableTask
+                              key={task.id}
+                              task={task}
+                              index={index}
+                              onEdit={(task) => {
+                                setEditingTask(task);
+                                setIsModalOpen(true);
+                              }}
+                              onDelete={(taskId) => setTasks(tasks.filter((t) => t.id !== taskId))}
+                              onAddSubtask={() => handleAddSubtask(task)}
+                              onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
+                              onComplete={(taskId, completed) =>
+                                setTasks(tasks.map((t) => (t.id === taskId ? { ...t, completed } : t)))
+                              }
+                              onDeleteSubtask={(taskId, subtaskId) =>
+                                setTasks(
+                                  tasks.map((t) =>
+                                    t.id === taskId
+                                      ? { ...t, subtasks: t.subtasks.filter((s) => s.id !== subtaskId) }
+                                      : t
+                                  )
                                 )
-                              )
-                            }
-                            onUpdateSubtask={(taskId, subtaskId, updates) =>
-                              setTasks(
-                                tasks.map((t) =>
-                                  t.id === taskId
-                                    ? {
-                                        ...t,
-                                        subtasks: t.subtasks.map((s) =>
-                                          s.id === subtaskId ? { ...s, ...updates } : s
-                                        ),
-                                      }
-                                    : t
+                              }
+                              onUpdateSubtask={(taskId, subtaskId, updates) =>
+                                setTasks(
+                                  tasks.map((t) =>
+                                    t.id === taskId
+                                      ? {
+                                          ...t,
+                                          subtasks: t.subtasks.map((s) =>
+                                            s.id === subtaskId ? { ...s, ...updates } : s
+                                          ),
+                                        }
+                                      : t
+                                  )
                                 )
-                              )
-                            }
-                          />
-                        ) : null
-                      )}
+                              }
+                            />
+                          ) : null
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {secondColumn.map((task, index) =>
+                          task.id ? (
+                            <SortableTask
+                              key={task.id}
+                              task={task}
+                              index={firstColumn.length + index}
+                              onEdit={(task) => {
+                                setEditingTask(task);
+                                setIsModalOpen(true);
+                              }}
+                              onDelete={(taskId) => setTasks(tasks.filter((t) => t.id !== taskId))}
+                              onAddSubtask={() => handleAddSubtask(task)}
+                              onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
+                              onComplete={(taskId, completed) =>
+                                setTasks(tasks.map((t) => (t.id === taskId ? { ...t, completed } : t)))
+                              }
+                              onDeleteSubtask={(taskId, subtaskId) =>
+                                setTasks(
+                                  tasks.map((t) =>
+                                    t.id === taskId
+                                      ? { ...t, subtasks: t.subtasks.filter((s) => s.id !== subtaskId) }
+                                      : t
+                                  )
+                                )
+                              }
+                              onUpdateSubtask={(taskId, subtaskId, updates) =>
+                                setTasks(
+                                  tasks.map((t) =>
+                                    t.id === taskId
+                                      ? {
+                                          ...t,
+                                          subtasks: t.subtasks.map((s) =>
+                                            s.id === subtaskId ? { ...s, ...updates } : s
+                                          ),
+                                        }
+                                      : t
+                                  )
+                                )
+                              }
+                            />
+                          ) : null
+                        )}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {secondColumn.map((task, index) =>
-                        task.id ? (
-                          <SortableTask
-                            key={task.id}
-                            task={task}
-                            index={firstColumn.length + index}
-                            onEdit={(task) => {
-                              setEditingTask(task);
-                              setIsModalOpen(true);
-                            }}
-                            onDelete={(taskId) => setTasks(tasks.filter((t) => t.id !== taskId))}
-                            onAddSubtask={() => handleAddSubtask(task)}
-                            onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
-                            onComplete={(taskId, completed) =>
-                              setTasks(tasks.map((t) => (t.id === taskId ? { ...t, completed } : t)))
-                            }
-                            onDeleteSubtask={(taskId, subtaskId) =>
-                              setTasks(
-                                tasks.map((t) =>
-                                  t.id === taskId
-                                    ? { ...t, subtasks: t.subtasks.filter((s) => s.id !== subtaskId) }
-                                    : t
-                                )
-                              )
-                            }
-                            onUpdateSubtask={(taskId, subtaskId, updates) =>
-                              setTasks(
-                                tasks.map((t) =>
-                                  t.id === taskId
-                                    ? {
-                                        ...t,
-                                        subtasks: t.subtasks.map((s) =>
-                                          s.id === subtaskId ? { ...s, ...updates } : s
-                                        ),
-                                      }
-                                    : t
-                                )
-                              )
-                            }
-                          />
-                        ) : null
-                      )}
-                    </div>
-                  </div>
-                </SortableContext>
-              </div>
+                  </SortableContext>
+                </div>
+              </DroppableContainer>
             );
           })}
         </div>
+
+        <DragOverlay>
+          {activeTask ? (
+            <div className="opacity-90 rotate-3 scale-105">
+              <TaskCard task={activeTask} />
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
 
       <AddTaskModal
@@ -320,7 +445,7 @@ export default function KanbanView({ theme }) {
         onAdd={(taskId, subtask) =>
           setTasks(
             tasks.map((t) =>
-              t.id === taskId ? { ...t, subtasks: [...(t.subtasks || [], subtask)] } : t
+              t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), subtask] } : t
             )
           )
         }
