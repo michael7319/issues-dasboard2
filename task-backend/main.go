@@ -89,6 +89,21 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		
+		// Validate that the main_assignee_id exists in Users table if it's not 0
+		if task.MainAssigneeID != 0 {
+			var userExists bool
+			err := db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", task.MainAssigneeID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
+				return
+			}
+			if !userExists {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Main assignee ID does not exist"})
+				return
+			}
+		}
+		
 		res, err := db.Exec(
 			`INSERT INTO Tasks (title, description, priority, type, main_assignee_id, supporting_assignees, schedule, completed, archived)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -115,6 +130,21 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		
+		// Validate that the main_assignee_id exists in Users table if it's not 0
+		if task.MainAssigneeID != 0 {
+			var userExists bool
+			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", task.MainAssigneeID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
+				return
+			}
+			if !userExists {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Main assignee ID does not exist"})
+				return
+			}
+		}
+		
 		_, err = db.Exec(
 			`UPDATE Tasks SET title = ?, description = ?, priority = ?, type = ?, main_assignee_id = ?,
 			 supporting_assignees = ?, schedule = ?, completed = ?, archived = ?
@@ -155,6 +185,21 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		
+		// Validate that the main_assignee_id exists in Users table if it's not 0
+		if subtask.MainAssigneeID != 0 {
+			var userExists bool
+			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", subtask.MainAssigneeID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
+				return
+			}
+			if !userExists {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Main assignee ID does not exist"})
+				return
+			}
+		}
+		
 		res, err := db.Exec(
 			`INSERT INTO Subtasks (task_id, title, completed, main_assignee_id, supporting_assignees, schedule)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
@@ -186,6 +231,21 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		
+		// Validate that the main_assignee_id exists in Users table if it's not 0
+		if subtask.MainAssigneeID != 0 {
+			var userExists bool
+			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", subtask.MainAssigneeID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
+				return
+			}
+			if !userExists {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Main assignee ID does not exist"})
+				return
+			}
+		}
+		
 		_, err = db.Exec(
 			`UPDATE Subtasks SET title = ?, completed = ?, main_assignee_id = ?, supporting_assignees = ?, schedule = ?
 			 WHERE id = ? AND task_id = ?`,
