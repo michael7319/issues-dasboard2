@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import users from "../data/users";
 import {
   Dialog,
@@ -6,25 +6,15 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { z } from "zod";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 
 const WEEKDAYS = [
   "Sunday",
-  "Monday",
+  "Monday", 
   "Tuesday",
   "Wednesday",
   "Thursday",
@@ -42,278 +32,374 @@ export default function AddSubtaskModal({
 }) {
   const isEditMode = editingSubtask !== null;
 
-  const formSchema = z.object({
-    title: z.string().min(1, { message: "Title is required" }),
-    mainAssignee: z.string().min(1, { message: "Main assignee is required" }),
-    supportingAssignees: z.array(z.string()).optional(),
-    completed: z.boolean().optional(),
-    scheduleMode: z.enum(["countdown", "due", "none"]).optional(),
-    cdHours: z.string().optional(),
-    cdMinutes: z.string().optional(),
-    dueAt: z.string().optional(),
-    dueWeekday: z.string().optional(),
-  });
+  // Core subtask fields - match backend structure
+  const [title, setTitle] = useState("");
+  const [mainAssigneeId, setMainAssigneeId] = useState("");
+  const [supportingAssignees, setSupportingAssignees] = useState([]);
+  const [completed, setCompleted] = useState(false);
 
-  const form = useForm({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      title: "",
-      mainAssignee: "",
-      supportingAssignees: [],
-      completed: false,
-      scheduleMode: "none",
-      cdHours: "",
-      cdMinutes: "",
-      dueAt: "",
-      dueWeekday: "0",
-    },
-  });
+  // Scheduling state
+  const [scheduleMode, setScheduleMode] = useState("none");
+  const [cdHours, setCdHours] = useState(0);
+  const [cdMinutes, setCdMinutes] = useState(0);
+  const [dueAt, setDueAt] = useState("");
+  const [dueWeekday, setDueWeekday] = useState(0);
 
+  // Form state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Populate on edit / reset on open
   useEffect(() => {
-    if (open) {
-      const sch = editingSubtask?.schedule || {};
+    if (editingSubtask) {
+      setTitle(editingSubtask.title || "");
+      
+      // Handle both old and new field structures
+      const mainAssigneeValue = editingSubtask.mainAssigneeId || editingSubtask.mainAssignee || editingSubtask.main_assignee_id;
+      setMainAssigneeId(mainAssigneeValue ? String(mainAssigneeValue) : "");
+      
+      // Parse supporting assignees - could be JSON string or array
+      let supportingIds = [];
+      const supportingData = editingSubtask.supportingAssignees || editingSubtask.supporting_assignees;
+      if (supportingData) {
+        if (typeof supportingData === 'string') {
+          try {
+            supportingIds = JSON.parse(supportingData);
+          } catch (e) {
+            console.warn("Failed to parse supporting_assignees:", supportingData);
+          }
+        } else if (Array.isArray(supportingData)) {
+          supportingIds = supportingData;
+        }
+      }
+      setSupportingAssignees(supportingIds.map(String));
+      
+      setCompleted(editingSubtask.completed || false);
+
+      // Parse schedule - could be JSON string or object
+      let sch = {};
+      if (editingSubtask.schedule) {
+        if (typeof editingSubtask.schedule === 'string') {
+          try {
+            sch = JSON.parse(editingSubtask.schedule);
+          } catch (e) {
+            console.warn("Failed to parse schedule:", editingSubtask.schedule);
+          }
+        } else if (typeof editingSubtask.schedule === 'object') {
+          sch = editingSubtask.schedule;
+        }
+      }
+
+      setScheduleMode(sch.mode || "none");
+
       const total = sch.countdownSeconds ?? 0;
+      setCdHours(Math.floor(total / 3600));
+      setCdMinutes(Math.floor((total % 3600) / 60));
 
-      form.reset({
-        title: editingSubtask?.title || "",
-        mainAssignee: editingSubtask?.mainAssignee
-          ? String(editingSubtask.mainAssignee)
-          : "",
-        supportingAssignees: editingSubtask?.supportingAssignees?.map(String) || [],
-        completed: editingSubtask?.completed || false,
-        scheduleMode: sch.mode || "none",
-        cdHours: sch.mode === "countdown" ? String(Math.floor(total / 3600)) : "",
-        cdMinutes: sch.mode === "countdown" ? String(Math.floor((total % 3600) / 60)) : "",
-        dueAt: sch.dueAt || "",
-        dueWeekday: sch.dueWeekday?.toString() || "0",
-      });
+      setDueAt(sch.dueAt || "");
+      setDueWeekday(typeof sch.dueWeekday === "number" ? sch.dueWeekday : 0);
+    } else {
+      // Reset form for new subtask
+      setTitle("");
+      setMainAssigneeId("");
+      setSupportingAssignees([]);
+      setCompleted(false);
+      setScheduleMode("none");
+      setCdHours(0);
+      setCdMinutes(0);
+      setDueAt("");
+      setDueWeekday(0);
     }
-  }, [open, editingSubtask, form]);
+    setError(null);
+  }, [editingSubtask, open]);
 
-  const handleSubmit = (values) => {
-    let schedule = null;
+  const toggleSupporting = (id) => {
+    setSupportingAssignees((prev) =>
+      prev.includes(id) ? prev.filter((uid) => uid !== id) : [...prev, id]
+    );
+  };
 
-    if (values.scheduleMode === "countdown") {
+  const buildSchedule = () => {
+    if (scheduleMode === "none") return null;
+
+    if (scheduleMode === "countdown") {
       const totalSeconds =
-        Math.max(0, parseInt(values.cdHours || "0", 10)) * 3600 +
-        Math.max(0, parseInt(values.cdMinutes || "0", 10)) * 60;
+        Math.max(0, parseInt(cdHours || 0, 10)) * 3600 +
+        Math.max(0, parseInt(cdMinutes || 0, 10)) * 60;
 
       if (totalSeconds > 0) {
-        schedule = {
+        return {
           mode: "countdown",
           countdownSeconds: totalSeconds,
           countdownStartAt: new Date().toISOString(),
         };
       }
-    } else if (values.scheduleMode === "due") {
-      schedule = {
+    } else if (scheduleMode === "due") {
+      return {
         mode: "due",
-        dueAt: values.dueAt || null,
-        dueWeekday: values.dueWeekday ? Number(values.dueWeekday) : null,
+        dueAt: dueAt || null,
+        dueWeekday: dueWeekday !== null ? Number(dueWeekday) : null,
       };
     }
 
-    const subtaskData = {
-      id: editingSubtask?.id || Date.now(),
-      title: values.title,
-      completed: values.completed,
-      mainAssignee: Number(values.mainAssignee),
-      supportingAssignees: values.supportingAssignees.map(Number),
-      schedule,
-    };
+    return null;
+  };
 
-    if (isEditMode) {
-      onUpdate(parentTask.id, subtaskData);
-    } else {
-      onAdd(parentTask.id, subtaskData);
+  const handleSubmit = async () => {
+    if (!title.trim() || !mainAssigneeId) {
+      setError("Title and main assignee are required");
+      return;
     }
 
-    handleClose();
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const schedule = buildSchedule();
+
+      // Structure data to match backend expectations
+      const subtaskData = {
+        // Use the ID if editing, let backend generate if new
+        ...(editingSubtask?.id && { id: editingSubtask.id }),
+        title: title.trim(),
+        completed,
+        main_assignee_id: Number(mainAssigneeId), // Backend expects this field name
+        supporting_assignees: JSON.stringify(supportingAssignees.map(Number)), // Store as JSON string
+        schedule: schedule ? JSON.stringify(schedule) : null, // Store as JSON string
+      };
+
+      if (isEditMode) {
+        await onUpdate(parentTask.id, subtaskData);
+      } else {
+        await onAdd(parentTask.id, subtaskData);
+      }
+
+      onClose();
+    } catch (err) {
+      console.error("Error submitting subtask:", err);
+      setError(err.message || "Failed to save subtask");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleClose = () => {
-    form.reset();
-    onClose();
-  };
+  const showCountdownInputs = scheduleMode === "countdown";
+  const showDueInputs = scheduleMode === "due";
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(openState) => {
-        if (!openState) {
-          handleClose();
-        }
-      }}
-    >
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle className="text-center">
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="max-w-lg w-full max-h-[90vh] overflow-y-auto p-4">
+        <DialogHeader className="mb-2">
+          <DialogTitle className="text-lg">
             {isEditMode ? "Edit Subtask" : `Add Subtask to "${parentTask?.title}"`}
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
-          {/* Title Input */}
-          <div className="space-y-2">
-            <Label htmlFor="title">Title *</Label>
-            <Input
-              id="title"
-              placeholder="Enter subtask title"
-              {...form.register("title")}
-              className={form.formState.errors.title ? "border-red-500" : ""}
-              required
-            />
+        {error && (
+          <div className="p-3 bg-red-100 text-red-800 rounded-lg mb-4">
+            <p className="text-sm">{error}</p>
           </div>
+        )}
 
-          {/* Main Assignee Select */}
-          <div className="space-y-2">
-            <Label htmlFor="mainAssignee">Main Assignee *</Label>
-            <Controller
-              name="mainAssignee"
-              control={form.control}
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} required>
-                  <SelectTrigger id="mainAssignee">
-                    <SelectValue placeholder="Select main assignee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={String(user.id)}>
-                        {user.fullName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
+        {/* Title */}
+        <div className="mb-3 text-sm">
+          <Label htmlFor="title" className="mb-1 block">
+            Title *
+          </Label>
+          <Input
+            id="title"
+            placeholder="Enter subtask title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="p-1 text-sm"
+            disabled={isSubmitting}
+            required
+          />
+        </div>
+
+        {/* Main Assignee */}
+        <div className="mb-3 text-sm">
+          <Label htmlFor="main-assignee" className="mb-1 block">
+            Main Assignee *
+          </Label>
+          <select
+            id="main-assignee"
+            className="w-full p-1 border rounded text-sm text-black disabled:opacity-50"
+            value={mainAssigneeId}
+            onChange={(e) => setMainAssigneeId(e.target.value)}
+            disabled={isSubmitting}
+            required
+          >
+            <option value="">Select main assignee</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.initials} — {u.fullName}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Supporting Assignees */}
+        <div className="mb-3 text-sm">
+          <Label className="mb-1 block">Supporting Assignees</Label>
+          <div className="flex flex-wrap gap-2">
+            {users.map((u) => (
+              <label key={u.id} className="flex items-center gap-1 text-xs">
+                <input
+                  type="checkbox"
+                  value={u.id}
+                  checked={supportingAssignees.includes(String(u.id))}
+                  onChange={() => toggleSupporting(String(u.id))}
+                  disabled={isSubmitting}
+                />
+                <span className="bg-yellow-100 text-yellow-800 px-1 py-0.5 rounded font-bold">
+                  {u.initials}
+                </span>
+              </label>
+            ))}
           </div>
+        </div>
 
-          {/* Supporting Assignees */}
-          <div className="space-y-2">
-            <Label>Supporting Assignees</Label>
-            <Controller
-              name="supportingAssignees"
-              control={form.control}
-              render={({ field }) => (
-                <div className="grid gap-2 max-h-40 overflow-y-auto p-3 border rounded-md">
-                  {users.map((user) => (
-                    <div key={user.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`supporting-${user.id}`}
-                        checked={field.value.includes(String(user.id))}
-                        onCheckedChange={(checked) => {
-                          field.onChange(
-                            checked
-                              ? [...field.value, String(user.id)]
-                              : field.value.filter((id) => id !== String(user.id))
-                          );
-                        }}
-                      />
-                      <label
-                        htmlFor={`supporting-${user.id}`}
-                        className="text-sm font-medium leading-none cursor-pointer"
-                      >
-                        {user.fullName}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              )}
-            />
+        {/* Completed Checkbox (only in edit mode) */}
+        {isEditMode && (
+          <div className="mb-3 text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={completed}
+                onChange={(e) => setCompleted(e.target.checked)}
+                disabled={isSubmitting}
+              />
+              <span>Mark as completed</span>
+            </label>
           </div>
+        )}
 
-          {/* Schedule Mode */}
-          <div className="space-y-2">
-            <Label>Schedule</Label>
-            <Controller
-              name="scheduleMode"
-              control={form.control}
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="countdown">Countdown</SelectItem>
-                    <SelectItem value="due">Due Date</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
+        {/* Schedule */}
+        <div className="mb-3 text-sm">
+          <Label className="font-medium block mb-1">Schedule</Label>
+          
+          {/* Schedule Mode selector */}
+          <div className="flex gap-3 mb-2">
+            <label className="flex items-center gap-1 text-xs">
+              <input
+                type="radio"
+                checked={scheduleMode === "none"}
+                onChange={() => setScheduleMode("none")}
+                disabled={isSubmitting}
+              />
+              None
+            </label>
+            <label className="flex items-center gap-1 text-xs">
+              <input
+                type="radio"
+                checked={scheduleMode === "countdown"}
+                onChange={() => setScheduleMode("countdown")}
+                disabled={isSubmitting}
+              />
+              Countdown
+            </label>
+            <label className="flex items-center gap-1 text-xs">
+              <input
+                type="radio"
+                checked={scheduleMode === "due"}
+                onChange={() => setScheduleMode("due")}
+                disabled={isSubmitting}
+              />
+              Due Date
+            </label>
           </div>
 
           {/* Countdown Fields */}
-          {form.watch("scheduleMode") === "countdown" && (
-            <div>
-              <Label className="text-xs block mb-1">Countdown (Hours / Minutes)</Label>
+          {showCountdownInputs && (
+            <div className="mb-2">
+              <Label className="text-xs block mb-1">
+                Countdown (Hours / Minutes)
+              </Label>
               <div className="grid grid-cols-2 gap-2">
                 <Input
                   type="number"
                   min={0}
+                  value={cdHours}
+                  onChange={(e) =>
+                    setCdHours(Math.max(0, parseInt(e.target.value || 0, 10)))
+                  }
                   placeholder="Hours"
-                  {...form.register("cdHours")}
+                  className="p-1 text-sm"
+                  disabled={isSubmitting}
                 />
                 <Input
                   type="number"
                   min={0}
                   max={59}
+                  value={cdMinutes}
+                  onChange={(e) =>
+                    setCdMinutes(
+                      Math.min(59, Math.max(0, parseInt(e.target.value || 0, 10)))
+                    )
+                  }
                   placeholder="Minutes"
-                  {...form.register("cdMinutes")}
+                  className="p-1 text-sm"
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
           )}
 
-          {/* Due Date + Weekly Repeat side by side */}
-          {form.watch("scheduleMode") === "due" && (
+          {/* Due Date + Weekly Repeat */}
+          {showDueInputs && (
             <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-2">
-                <Label htmlFor="dueAt">Due Date</Label>
-                <Input id="dueAt" type="date" {...form.register("dueAt")} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dueWeekday">Weekly Repeat</Label>
-                <Controller
-                  name="dueWeekday"
-                  control={form.control}
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select weekday" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {WEEKDAYS.map((day, idx) => (
-                          <SelectItem key={idx} value={String(idx)}>
-                            {day}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+              <div>
+                <Label htmlFor="dueAt" className="text-xs block mb-1">
+                  Due Date
+                </Label>
+                <Input
+                  id="dueAt"
+                  type="date"
+                  value={dueAt}
+                  onChange={(e) => setDueAt(e.target.value)}
+                  disabled={isSubmitting}
+                  className="p-1 text-sm"
                 />
+              </div>
+              <div>
+                <Label className="text-xs block mb-1">Weekly Repeat</Label>
+                <select
+                  value={dueWeekday}
+                  onChange={(e) => setDueWeekday(parseInt(e.target.value, 10))}
+                  disabled={isSubmitting}
+                  className="w-full p-1 border rounded text-sm text-black"
+                >
+                  {WEEKDAYS.map((day, idx) => (
+                    <option key={idx} value={idx}>
+                      {day}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           )}
+        </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4">
+        <DialogFooter className="flex justify-end gap-2 mt-4">
+          <DialogClose asChild>
             <Button
               type="button"
               variant="outline"
-              onClick={handleClose}
-              className="w-full sm:w-auto"
+              disabled={isSubmitting}
+              className="text-sm"
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              className="w-full sm:w-auto"
-              disabled={!form.formState.isValid}
-            >
-              {isEditMode ? "Update Subtask" : "Add Subtask"}
-            </Button>
-          </DialogFooter>
-        </form>
+          </DialogClose>
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="text-sm"
+          >
+            {isSubmitting ? "Saving..." : isEditMode ? "Update Subtask" : "Add Subtask"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

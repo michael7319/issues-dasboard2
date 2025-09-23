@@ -5,10 +5,10 @@ import { CSS } from "@dnd-kit/utilities";
 import AddTaskModal from "./AddTaskModal";
 import AddSubtaskModal from "./AddSubtaskModal";
 import TaskCard from "./TaskCard";
-import defaultTasks from "../data/tasks";
 
-export default function KanbanView({ theme }) {
-  const [tasks, setTasks] = useState([]);
+const API_BASE = "http://localhost:8080";
+
+export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, onArchive }) {
   const [showSubtaskModal, setShowSubtaskModal] = useState(false);
   const [taskToSubtask, setTaskToSubtask] = useState(null);
   const [editingSubtask, setEditingSubtask] = useState(null);
@@ -17,6 +17,7 @@ export default function KanbanView({ theme }) {
   const [error, setError] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -24,34 +25,7 @@ export default function KanbanView({ theme }) {
     })
   );
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("tasks");
-      const parsedTasks = stored ? JSON.parse(stored) : defaultTasks;
-      const validTasks = parsedTasks.filter(
-        (task) => task.id !== undefined && task.id !== null
-      );
-      if (validTasks.length !== parsedTasks.length) {
-        console.warn("Filtered out invalid tasks:", parsedTasks);
-        localStorage.setItem("tasks", JSON.stringify(validTasks));
-      }
-      setTasks(validTasks);
-      console.log("Loaded tasks:", validTasks);
-    } catch (err) {
-      console.error("Error loading tasks:", err);
-      setError(err.message);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("tasks", JSON.stringify(tasks));
-    } catch (err) {
-      console.error("Error saving tasks:", err);
-      setError(err.message);
-    }
-  }, [tasks]);
-
+  // Listen for add task events from other components
   useEffect(() => {
     const handleAddTaskEvent = () => {
       setEditingTask(null);
@@ -61,24 +35,148 @@ export default function KanbanView({ theme }) {
     return () => window.removeEventListener("addTask", handleAddTaskEvent);
   }, []);
 
-  const handleAddOrEditTask = (newTask) => {
+  // API call to create a new task
+  const createTask = async (taskData) => {
     try {
-      if (!newTask.id) {
-        throw new Error("Task missing ID");
-      }
-      setTasks((prev) => {
-        const exists = prev.find((t) => t.id === newTask.id);
-        if (exists) {
-          return prev.map((t) => (t.id === newTask.id ? newTask : t));
-        }
-        return [newTask, ...prev];
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...taskData,
+          archived: false,
+          created_at: new Date().toISOString()
+        })
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const newTask = await response.json();
+      return newTask;
+    } catch (err) {
+      console.error("Error creating task:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // API call to update a task
+  const updateTask = async (taskId, taskData) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const updatedTask = await response.json();
+      return updatedTask;
+    } catch (err) {
+      console.error("Error updating task:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // API call to create a subtask
+  const createSubtask = async (taskId, subtaskData) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subtaskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const newSubtask = await response.json();
+      return newSubtask;
+    } catch (err) {
+      console.error("Error creating subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // API call to update a subtask
+  const updateSubtask = async (taskId, subtaskId, subtaskData) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subtaskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const updatedSubtask = await response.json();
+      return updatedSubtask;
+    } catch (err) {
+      console.error("Error updating subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // API call to delete a subtask
+  const deleteSubtask = async (taskId, subtaskId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+    } catch (err) {
+      console.error("Error deleting subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddOrEditTask = async (newTask) => {
+    try {
+      if (editingTask) {
+        // Update existing task
+        const updatedTask = await updateTask(editingTask.id, newTask);
+        setTasks(prev => prev.map(t => t.id === editingTask.id ? updatedTask : t));
+      } else {
+        // Create new task
+        const createdTask = await createTask(newTask);
+        setTasks(prev => [createdTask, ...prev]);
+      }
+      
       window.dispatchEvent(new CustomEvent("taskAdded", { detail: { task: newTask } }));
       setEditingTask(null);
       setIsModalOpen(false);
     } catch (err) {
-      console.error("Error adding/editing task:", err);
-      setError(err.message);
+      // Error already handled in API functions
+      console.error("Error in handleAddOrEditTask:", err);
     }
   };
 
@@ -92,6 +190,103 @@ export default function KanbanView({ theme }) {
     setTaskToSubtask(task);
     setEditingSubtask(subtask);
     setShowSubtaskModal(true);
+  };
+
+  const handleSubtaskAdd = async (taskId, subtask) => {
+    try {
+      const newSubtask = await createSubtask(taskId, subtask);
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), newSubtask] } : t
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
+  };
+
+  const handleSubtaskUpdate = async (taskId, subtask) => {
+    try {
+      const updatedSubtask = await updateSubtask(taskId, subtask.id, subtask);
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskId
+            ? { ...t, subtasks: t.subtasks.map(s => s.id === subtask.id ? updatedSubtask : s) }
+            : t
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
+  };
+
+  const handleDeleteSubtask = async (taskId, subtaskId) => {
+    try {
+      await deleteSubtask(taskId, subtaskId);
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskId
+            ? { ...t, subtasks: t.subtasks.filter(s => s.id !== subtaskId) }
+            : t
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
+  };
+
+  const handleUpdateSubtask = async (taskId, subtaskId, updates) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      const subtask = task?.subtasks?.find(s => s.id === subtaskId);
+      
+      if (subtask) {
+        const updatedSubtaskData = { ...subtask, ...updates };
+        const updatedSubtask = await updateSubtask(taskId, subtaskId, updatedSubtaskData);
+        setTasks(prev =>
+          prev.map(t =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  subtasks: t.subtasks.map(s =>
+                    s.id === subtaskId ? updatedSubtask : s
+                  ),
+                }
+              : t
+          )
+        );
+      }
+    } catch (err) {
+      // Error already handled in API function
+    }
+  };
+
+  const handleCompleteTask = async (taskId, completed) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        const updatedTaskData = { 
+          ...task, 
+          completed,
+          // If marking as complete, also complete all subtasks
+          // If marking as incomplete, leave subtasks as they are
+        };
+        
+        const updatedTask = await updateTask(taskId, updatedTaskData);
+        
+        // If we have subtasks and we're completing the task, update them too
+        if (completed && task.subtasks && task.subtasks.length > 0) {
+          const subtaskUpdatePromises = task.subtasks.map(subtask =>
+            updateSubtask(taskId, subtask.id, { ...subtask, completed: true })
+          );
+          await Promise.all(subtaskUpdatePromises);
+        }
+        
+        setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+      }
+    } catch (err) {
+      // Error already handled in API functions
+    }
   };
 
   const handleDragStart = (event) => {
@@ -133,7 +328,7 @@ export default function KanbanView({ theme }) {
 
     if (activeContainer === overContainer) return;
 
-    // Move task between containers
+    // Move task between containers (optimistic update)
     setTasks((prev) => {
       const activeIndex = prev.findIndex(t => t.id === activeId);
       const overIndex = prev.findIndex(t => t.id === overId);
@@ -144,11 +339,12 @@ export default function KanbanView({ theme }) {
       const [movedTask] = newTasks.splice(activeIndex, 1);
       
       // Update completion status based on target container
-      movedTask.completed = overContainer === "Done";
+      const newCompleted = overContainer === "Done";
+      movedTask.completed = newCompleted;
       if (movedTask.subtasks) {
         movedTask.subtasks = movedTask.subtasks.map(sub => ({
           ...sub,
-          completed: movedTask.completed
+          completed: newCompleted
         }));
       }
 
@@ -167,7 +363,7 @@ export default function KanbanView({ theme }) {
     });
   };
 
-  const handleDragEnd = (event) => {
+  const handleDragEnd = async (event) => {
     const { active, over } = event;
     
     setActiveId(null);
@@ -180,38 +376,66 @@ export default function KanbanView({ theme }) {
 
     if (activeId === overId) return;
 
-    // Handle reordering within the same container
-    setTasks((prev) => {
-      const activeIndex = prev.findIndex(t => t.id === activeId);
-      const overIndex = prev.findIndex(t => t.id === overId);
-      
-      if (activeIndex === -1) return prev;
+    const activeTask = tasks.find(t => t.id === activeId);
+    if (!activeTask) return;
 
-      const activeTask = prev[activeIndex];
-      const activeContainer = getTaskContainer(activeTask);
-      
-      let overContainer = null;
-      const overData = over.data?.current;
-      
-      if (overData?.type === 'container') {
-        overContainer = overId;
-      } else if (overIndex >= 0) {
-        const overTask = prev[overIndex];
+    // Determine the target container
+    const overData = over.data?.current;
+    let overContainer = null;
+
+    if (overData?.type === 'container') {
+      overContainer = overId;
+    } else {
+      const overTask = tasks.find(t => t.id === overId);
+      if (overTask) {
         overContainer = getTaskContainer(overTask);
       }
+    }
 
-      if (!overContainer) return prev;
+    if (overContainer && overContainer !== getTaskContainer(activeTask)) {
+      // Task moved to different container - update in backend
+      const newCompleted = overContainer === "Done";
+      
+      try {
+        const updatedTaskData = {
+          ...activeTask,
+          completed: newCompleted
+        };
 
-      // If same container, just reorder
-      if (activeContainer === overContainer && overIndex >= 0) {
-        const newTasks = [...prev];
-        const [movedTask] = newTasks.splice(activeIndex, 1);
-        newTasks.splice(overIndex, 0, movedTask);
-        return newTasks;
+        await updateTask(activeId, updatedTaskData);
+
+        // Update subtasks if needed
+        if (activeTask.subtasks && activeTask.subtasks.length > 0) {
+          const subtaskUpdatePromises = activeTask.subtasks.map(subtask =>
+            updateSubtask(activeId, subtask.id, { ...subtask, completed: newCompleted })
+          );
+          await Promise.all(subtaskUpdatePromises);
+        }
+      } catch (err) {
+        // Revert optimistic update on error
+        setTasks(prev => prev.map(t => t.id === activeId ? activeTask : t));
       }
+    }
 
-      return prev;
-    });
+    // Handle reordering within the same container if needed
+    const activeIndex = tasks.findIndex(t => t.id === activeId);
+    const overIndex = tasks.findIndex(t => t.id === overId);
+    
+    if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
+      const activeContainer = getTaskContainer(activeTask);
+      const overTask = tasks.find(t => t.id === overId);
+      const overContainer = getTaskContainer(overTask);
+
+      if (activeContainer === overContainer) {
+        // Same container reorder - update local state
+        setTasks((prev) => {
+          const newTasks = [...prev];
+          const [movedTask] = newTasks.splice(activeIndex, 1);
+          newTasks.splice(overIndex, 0, movedTask);
+          return newTasks;
+        });
+      }
+    }
   };
 
   const getTaskContainer = (task) => {
@@ -273,30 +497,33 @@ export default function KanbanView({ theme }) {
         <p>{error}</p>
         <button
           className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          onClick={() => {
-            setError(null);
-            setTasks(defaultTasks);
-            localStorage.setItem("tasks", JSON.stringify(defaultTasks));
-          }}
+          onClick={() => setError(null)}
         >
-          Reset Tasks
+          Dismiss Error
         </button>
       </div>
     );
   }
 
   return (
-    <div className={`flex flex-col p-4 ${theme === "light" ? "bg-gray-500" : "bg-gray-800"} rounded-lg shadow-lg`}>
+    <div className={`flex flex-col p-4 ${theme === "light" ? "bg-gray-500" : "bg-gray-800"} rounded-lg shadow-lg ${loading ? 'opacity-75' : ''}`}>
       <button
         type="button"
         onClick={() => {
           setEditingTask(null);
           setIsModalOpen(true);
         }}
-        className="fixed z-50 px-6 py-3 mb-4 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700 transition-all duration-300"
+        disabled={loading}
+        className="fixed z-50 px-6 py-3 mb-4 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700 transition-all duration-300 disabled:opacity-50"
       >
         + Add Task
       </button>
+
+      {loading && (
+        <div className="absolute top-4 right-4 z-40">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+        </div>
+      )}
 
       <DndContext 
         sensors={sensors} 
@@ -324,42 +551,19 @@ export default function KanbanView({ theme }) {
                         {firstColumn.map((task, index) =>
                           task.id ? (
                             <SortableTask
-                              key={task.id}
+                              key={`${status}-first-${task.id}`}
                               task={task}
                               index={index}
                               onEdit={(task) => {
                                 setEditingTask(task);
                                 setIsModalOpen(true);
                               }}
-                              onDelete={(taskId) => setTasks(tasks.filter((t) => t.id !== taskId))}
+                              onDelete={onDelete}
                               onAddSubtask={() => handleAddSubtask(task)}
                               onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
-                              onComplete={(taskId, completed) =>
-                                setTasks(tasks.map((t) => (t.id === taskId ? { ...t, completed } : t)))
-                              }
-                              onDeleteSubtask={(taskId, subtaskId) =>
-                                setTasks(
-                                  tasks.map((t) =>
-                                    t.id === taskId
-                                      ? { ...t, subtasks: t.subtasks.filter((s) => s.id !== subtaskId) }
-                                      : t
-                                  )
-                                )
-                              }
-                              onUpdateSubtask={(taskId, subtaskId, updates) =>
-                                setTasks(
-                                  tasks.map((t) =>
-                                    t.id === taskId
-                                      ? {
-                                          ...t,
-                                          subtasks: t.subtasks.map((s) =>
-                                            s.id === subtaskId ? { ...s, ...updates } : s
-                                          ),
-                                        }
-                                      : t
-                                  )
-                                )
-                              }
+                              onComplete={handleCompleteTask}
+                              onDeleteSubtask={handleDeleteSubtask}
+                              onUpdateSubtask={handleUpdateSubtask}
                             />
                           ) : null
                         )}
@@ -368,42 +572,19 @@ export default function KanbanView({ theme }) {
                         {secondColumn.map((task, index) =>
                           task.id ? (
                             <SortableTask
-                              key={task.id}
+                              key={`${status}-second-${task.id}`}
                               task={task}
                               index={firstColumn.length + index}
                               onEdit={(task) => {
                                 setEditingTask(task);
                                 setIsModalOpen(true);
                               }}
-                              onDelete={(taskId) => setTasks(tasks.filter((t) => t.id !== taskId))}
+                              onDelete={onDelete}
                               onAddSubtask={() => handleAddSubtask(task)}
                               onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
-                              onComplete={(taskId, completed) =>
-                                setTasks(tasks.map((t) => (t.id === taskId ? { ...t, completed } : t)))
-                              }
-                              onDeleteSubtask={(taskId, subtaskId) =>
-                                setTasks(
-                                  tasks.map((t) =>
-                                    t.id === taskId
-                                      ? { ...t, subtasks: t.subtasks.filter((s) => s.id !== subtaskId) }
-                                      : t
-                                  )
-                                )
-                              }
-                              onUpdateSubtask={(taskId, subtaskId, updates) =>
-                                setTasks(
-                                  tasks.map((t) =>
-                                    t.id === taskId
-                                      ? {
-                                          ...t,
-                                          subtasks: t.subtasks.map((s) =>
-                                            s.id === subtaskId ? { ...s, ...updates } : s
-                                          ),
-                                        }
-                                      : t
-                                  )
-                                )
-                              }
+                              onComplete={handleCompleteTask}
+                              onDeleteSubtask={handleDeleteSubtask}
+                              onUpdateSubtask={handleUpdateSubtask}
                             />
                           ) : null
                         )}
@@ -442,22 +623,8 @@ export default function KanbanView({ theme }) {
           setTaskToSubtask(null);
           setEditingSubtask(null);
         }}
-        onAdd={(taskId, subtask) =>
-          setTasks(
-            tasks.map((t) =>
-              t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), subtask] } : t
-            )
-          )
-        }
-        onUpdate={(taskId, subtask) =>
-          setTasks(
-            tasks.map((t) =>
-              t.id === taskId
-                ? { ...t, subtasks: t.subtasks.map((s) => (s.id === subtask.id ? subtask : s)) }
-                : t
-            )
-          )
-        }
+        onAdd={handleSubtaskAdd}
+        onUpdate={handleSubtaskUpdate}
         parentTask={taskToSubtask}
         editingSubtask={editingSubtask}
       />

@@ -1,16 +1,70 @@
 import { useState, useEffect } from "react";
-import useLocalStorageTasks from "./hooks/use-tasks";
 import Sidebar from "./components/Sidebar";
 import TimeframeView from "./components/TimeframeView";
 import KanbanView from "./components/KanbanView";
 import TaskView from "./components/TaskView";
-import ArchivedTasks from "./components/ArchivedTasks"; // ✅ New import
+import ArchivedTasks from "./components/ArchivedTasks";
+
+const API_BASE = "http://localhost:8080";
+
+const toSnakeCase = (obj) => {
+  if (Array.isArray(obj)) {
+    return obj.map(toSnakeCase);
+  }
+  if (obj && typeof obj === 'object') {
+    return Object.keys(obj).reduce((acc, key) => {
+      const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      acc[snakeKey] = toSnakeCase(obj[key]);
+      return acc;
+    }, {});
+  }
+  return obj;
+};
+
+const toCamelCase = (obj) => {
+  if (Array.isArray(obj)) {
+    return obj.map(toCamelCase);
+  }
+  if (obj && typeof obj === 'object') {
+    return Object.keys(obj).reduce((acc, key) => {
+      const camelKey = key.replace(/_[a-z]/g, (match) => match[1].toUpperCase());
+      acc[camelKey] = toCamelCase(obj[key]);
+      return acc;
+    }, {});
+  }
+  return obj;
+};
 
 function App() {
   const [view, setView] = useState("task");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const { tasks, setTasks, clearAllTasks } = useLocalStorageTasks("tasks");
-  const [theme, setTheme] = useState("light"); // New state for theme
+  const [tasks, setTasks] = useState([]);
+  const [theme, setTheme] = useState("light");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch tasks from backend on mount
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  const fetchTasks = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      console.log("Fetched tasks:", data); // Debug log
+      setTasks(toCamelCase(data));
+    } catch (err) {
+      console.error("Failed to fetch tasks:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Handle sidebar toggle for layout
   useEffect(() => {
@@ -33,51 +87,147 @@ function App() {
     return () => window.removeEventListener("addTask", handleAddTask);
   }, [view]);
 
-  // Debug navigation events
-  useEffect(() => {
-    const handleNavigate = (event) => {
-      console.log("Navigate event:", event.detail.view);
-    };
-    window.addEventListener("navigate", handleNavigate);
-    return () => window.removeEventListener("navigate", handleNavigate);
-  }, []);
-
-  const clearTasks = () => {
-    clearAllTasks();
-    window.location.reload();
+  const clearTasks = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/tasks/clear`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        setTasks([]);
+        // Refetch to ensure consistency
+        await fetchTasks();
+      }
+    } catch (err) {
+      console.error("Failed to clear tasks:", err);
+      setError(err.message);
+    }
   };
 
-  // Toggle theme between light and dark
   const toggleTheme = () => {
     setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
   };
 
-  // Edit, delete, and archive handlers
-  const handleEdit = (taskId, updatedData) => {
-    setTasks(
-      tasks.map((task) =>
-        task.id === taskId ? { ...task, ...updatedData } : task
-      )
-    );
+  // Create task
+  const handleCreate = async (taskData) => {
+    try {
+      let bodyData = { ...taskData };
+      delete bodyData.id;
+      if (bodyData.createdAt) delete bodyData.createdAt;
+      if (bodyData.updatedAt) delete bodyData.updatedAt;
+      bodyData.archived = false;
+      bodyData.created_at = new Date().toISOString();
+      bodyData.updated_at = new Date().toISOString();
+      const snakeData = toSnakeCase(bodyData);
+      const response = await fetch(`${API_BASE}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snakeData)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const newTaskSnake = await response.json();
+      const newTask = toCamelCase(newTaskSnake);
+      setTasks(prev => [newTask, ...prev]);
+      return newTask;
+    } catch (err) {
+      console.error("Failed to create task:", err);
+      setError(err.message);
+      throw err;
+    }
   };
 
-  const handleDelete = (taskId) => {
-    setTasks(tasks.filter((task) => task.id !== taskId));
+  // Edit task
+  const handleEdit = async (taskId, updatedData) => {
+    try {
+      const snakeData = toSnakeCase(updatedData);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snakeData)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const updatedTaskSnake = await response.json();
+      const updatedTask = toCamelCase(updatedTaskSnake);
+      setTasks(tasks.map((task) => (task.id === taskId ? updatedTask : task)));
+      return updatedTask;
+    } catch (err) {
+      console.error("Failed to update task:", err);
+      setError(err.message);
+      throw err;
+    }
   };
 
-  const handleArchive = (taskId) => {
-    setTasks(
-      tasks.map((task) =>
-        task.id === taskId ? { ...task, archived: !task.archived } : task
-      )
-    );
+  // Delete task
+  const handleDelete = async (taskId) => {
+    try {
+      const response = await fetch(`${API_BASE}/tasks/${taskId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      setTasks(tasks.filter((task) => task.id !== taskId));
+    } catch (err) {
+      console.error("Failed to delete task:", err);
+      setError(err.message);
+    }
   };
 
-  // Get recent tasks (last 5, not archived, sorted by createdAt)
+  // Archive/unarchive task
+  const handleArchive = async (taskId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const updatedTask = { ...task, archived: !task.archived };
+    try {
+      const snakeData = toSnakeCase(updatedTask);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snakeData)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const dataSnake = await response.json();
+      const data = toCamelCase(dataSnake);
+      setTasks(tasks.map(t => t.id === taskId ? data : t));
+    } catch (err) {
+      console.error("Failed to archive task:", err);
+      setError(err.message);
+    }
+  };
+
+  // Get recent tasks (last 5, not archived, sorted by created_at)
   const recentTasks = tasks
     .filter((task) => !task.archived)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 5);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-100">
+        <p>Loading tasks...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <h2 className="text-lg font-bold text-red-600 mb-2">Error</h2>
+          <p>{error}</p>
+          <button
+            onClick={fetchTasks}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex min-h-screen ${theme === "light" ? "bg-white text-gray-800" : "bg-gray-950 text-gray-200"}`}>
@@ -86,17 +236,30 @@ function App() {
         className={`flex-grow p-6 overflow-y-auto transition-all duration-300 ${isSidebarCollapsed ? "ml-16" : "ml-64"} ${theme === "light" ? "bg-gray-100" : "bg-gray-900"}`}
       >
         {view === "task" ? (
-          <TaskView theme={theme} />
+          <TaskView 
+            theme={theme} 
+            tasks={tasks} 
+            setTasks={setTasks}
+            onCreate={handleCreate}
+            onEdit={handleEdit} 
+            onDelete={handleDelete} 
+            onArchive={handleArchive} 
+          />
         ) : view === "timeframe" ? (
-          <TimeframeView theme={theme}
+          <TimeframeView 
+            theme={theme}
             tasks={tasks}
+            setTasks={setTasks}
+            onCreate={handleCreate}
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}
           />
         ) : view === "kanban" ? (
-          <KanbanView theme={theme}
+          <KanbanView 
+            theme={theme}
             tasks={tasks}
+            setTasks={setTasks}
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}

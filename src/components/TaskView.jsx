@@ -3,10 +3,10 @@ import TaskCard from "./TaskCard";
 import AddTaskModal from "./AddTaskModal";
 import AddSubtaskModal from "./AddSubtaskModal";
 import users from "../data/users";
-import defaultTasks from "../data/tasks";
 
-export default function TaskView({ theme }) {
-  const [tasks, setTasks] = useState([]);
+const API_BASE = "http://localhost:8080";
+
+export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive }) {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -19,20 +19,8 @@ export default function TaskView({ theme }) {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
-
-  useEffect(() => {
-    const stored = localStorage.getItem("tasks");
-    if (!stored || stored === "[]" || stored === "null") {
-      setTasks(defaultTasks);
-      localStorage.setItem("tasks", JSON.stringify(defaultTasks));
-    } else {
-      setTasks(JSON.parse(stored));
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("tasks", JSON.stringify(tasks));
-  }, [tasks]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   // Listen for addTask event from Sidebar
   useEffect(() => {
@@ -44,22 +32,95 @@ export default function TaskView({ theme }) {
     return () => window.removeEventListener("addTask", handleAddTaskEvent);
   }, []);
 
-  const handleAddOrEditTask = (newTask) => {
-    setTasks((prev) => {
-      const exists = prev.find((t) => t.id === newTask.id);
-      if (exists) {
-        return prev.map((t) => (t.id === newTask.id ? newTask : t));
+  // API call to create a subtask
+  const createSubtask = async (taskId, subtaskData) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subtaskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      return [newTask, ...prev];
-    });
+      
+      const newSubtask = await response.json();
+      return newSubtask;
+    } catch (err) {
+      console.error("Error creating subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // Dispatch taskAdded event for Sidebar to update recent tasks
-    window.dispatchEvent(
-      new CustomEvent("taskAdded", { detail: { task: newTask } })
-    );
+  // API call to update a subtask
+  const updateSubtask = async (taskId, subtaskId, subtaskData) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subtaskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const updatedSubtask = await response.json();
+      return updatedSubtask;
+    } catch (err) {
+      console.error("Error updating subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    setEditingTask(null);
-    setIsModalOpen(false);
+  // API call to delete a subtask
+  const deleteSubtask = async (taskId, subtaskId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+    } catch (err) {
+      console.error("Error deleting subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddOrEditTask = async (newTask) => {
+    try {
+      if (editingTask) {
+        // Update existing task
+        await onEdit(editingTask.id, newTask);
+      } else {
+        // Create new task
+        const createdTask = await onCreate(newTask);
+        
+        // Dispatch event for sidebar
+        window.dispatchEvent(new CustomEvent("taskAdded", { detail: { task: createdTask } }));
+      }
+      
+      setEditingTask(null);
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error("Error in handleAddOrEditTask:", err);
+      setError(err.message);
+    }
   };
 
   const handleEditTask = (task) => {
@@ -67,62 +128,107 @@ export default function TaskView({ theme }) {
     setIsModalOpen(true);
   };
 
-  const handleUpdateTask = (updatedTask, task_id) => {
-    setTasks((prevTasks) =>
-      prevTasks.map((task) => (task.id === task_id ? updatedTask : task))
-    );
+  const handleDeleteTask = async (taskId) => {
+    try {
+      await onDelete(taskId);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
-  const handleDeleteTask = (taskId) => {
-    setTasks((prev) => prev.filter((task) => task.id !== taskId));
+  const handleDeleteSubtask = async (taskId, subtaskId) => {
+    try {
+      await deleteSubtask(taskId, subtaskId);
+      setTasks(prev =>
+        prev.map(task =>
+          task.id === taskId
+            ? {
+                ...task,
+                subtasks: (task.subtasks || []).filter(s => s.id !== subtaskId),
+              }
+            : task
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
   };
 
-  const handleDeleteSubtask = (taskId, subtaskId) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              subtasks: (task.subtasks || []).filter((s) => s.id !== subtaskId),
-            }
-          : task
-      )
-    );
+  const handleUpdateSubtask = async (taskId, subtaskId, updates) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      const subtask = task?.subtasks?.find(s => s.id === subtaskId);
+      
+      if (subtask) {
+        const updatedSubtaskData = { ...subtask, ...updates };
+        const updatedSubtask = await updateSubtask(taskId, subtaskId, updatedSubtaskData);
+        setTasks(prev =>
+          prev.map(t =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  subtasks: (t.subtasks || []).map(s =>
+                    s.id === subtaskId ? updatedSubtask : s
+                  ),
+                }
+              : t
+          )
+        );
+      }
+    } catch (err) {
+      // Error already handled in API function
+    }
   };
 
-  const handleUpdateSubtask = (taskId, subtaskId, updates) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              subtasks: (task.subtasks || []).map((s) =>
-                s.id === subtaskId ? { ...s, ...updates } : s
-              ),
-            }
-          : task
-      )
-    );
-  };
-
-  const handleMarkComplete = (taskId, completed) => {
-    setTasks((prev) =>
-      prev.map((task) => (task.id === taskId ? { ...task, completed } : task))
-    );
+  const handleMarkComplete = async (taskId, completed) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        await onEdit(taskId, { ...task, completed });
+      }
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const handleAddSubtask = (task) => {
-    console.log("Adding subtask to task:", task.id);
     setTaskToSubtask(task);
     setEditingSubtask(null);
     setShowSubtaskModal(true);
   };
 
   const handleEditSubtask = (task, subtask) => {
-    console.log("Editing subtask:", subtask.id);
     setTaskToSubtask(task);
     setEditingSubtask(subtask);
     setShowSubtaskModal(true);
+  };
+
+  const handleSubtaskAdd = async (taskId, subtask) => {
+    try {
+      const newSubtask = await createSubtask(taskId, subtask);
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), newSubtask] } : t
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
+  };
+
+  const handleSubtaskUpdate = async (taskId, subtask) => {
+    try {
+      const updatedSubtask = await updateSubtask(taskId, subtask.id, subtask);
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskId
+            ? { ...t, subtasks: (t.subtasks || []).map(s => s.id === subtask.id ? updatedSubtask : s) }
+            : t
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
   };
 
   const handleAddTask = () => {
@@ -148,8 +254,8 @@ export default function TaskView({ theme }) {
       priorityFilter === "all" || task.priority === priorityFilter;
     const matchesAssignee =
       assigneeFilter === "all" ||
-      Number(task.mainAssignee) === Number(assigneeFilter) ||
-      task.supportingAssignees.includes(Number(assigneeFilter));
+      Number(task.main_assignee_id) === Number(assigneeFilter) ||
+      (task.supporting_assignees && JSON.parse(task.supporting_assignees).includes(Number(assigneeFilter)));
     const matchesSearch = task.title
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
@@ -166,11 +272,23 @@ export default function TaskView({ theme }) {
 
   return (
     <div className="relative flex flex-col p-3 gap-4">
+      {error && (
+        <div className="p-4 bg-red-100 text-red-800 rounded-lg mb-4">
+          <p>{error}</p>
+          <button
+            onClick={() => setError(null)}
+            className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Filters & search controls */}
       <div
         className={`sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow ${
           theme === "dark" ? "bg-blue-950" : "bg-gray-900/80"
-        } backdrop-blur-sm`}
+        } backdrop-blur-sm ${loading ? 'opacity-75' : ''}`}
       >
         <select
           value={
@@ -182,19 +300,20 @@ export default function TaskView({ theme }) {
           }
           onChange={(e) => handleUnifiedFilterChange(e.target.value)}
           className="relative p-2 pr-8 text-sm text-black bg-yellow-200 border border-blue-300 rounded appearance-none"
+          disabled={loading}
         >
           <option value="all" className="bg-blue-200">
             All Tasks
           </option>
           <optgroup label="Priority">
             <option value="priority:High" className="bg-blue-200">
-              🔥 High
+              High
             </option>
             <option value="priority:Medium" className="bg-blue-200">
-              ⚠️ Medium
+              Medium
             </option>
             <option value="priority:Low" className="bg-blue-200">
-              ✅ Low
+              Low
             </option>
           </optgroup>
           <optgroup label="Assignee">
@@ -219,8 +338,15 @@ export default function TaskView({ theme }) {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search tasks..."
             className="p-1 text-sm rounded bg-gray-800 text-white placeholder-white focus:text-gray-500"
+            disabled={loading}
           />
         </div>
+
+        {loading && (
+          <div className="ml-auto">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+          </div>
+        )}
       </div>
 
       {/* Task List */}
@@ -258,7 +384,8 @@ export default function TaskView({ theme }) {
       <button
         type="button"
         onClick={handleAddTask}
-        className="fixed z-50 px-6 py-3 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700"
+        disabled={loading}
+        className="fixed z-50 px-6 py-3 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700 disabled:opacity-50"
       >
         + Add Task
       </button>
@@ -282,34 +409,8 @@ export default function TaskView({ theme }) {
           setTaskToSubtask(null);
           setEditingSubtask(null);
         }}
-        onAdd={(taskId, subtask) => {
-          setTasks((prev) =>
-            prev.map((task) =>
-              task.id === taskId
-                ? { ...task, subtasks: [...(task.subtasks || []), subtask] }
-                : task
-            )
-          );
-          setShowSubtaskModal(false);
-          setTaskToSubtask(null);
-        }}
-        onUpdate={(taskId, subtask) => {
-          setTasks((prev) =>
-            prev.map((task) =>
-              task.id === taskId
-                ? {
-                    ...task,
-                    subtasks: (task.subtasks || []).map((s) =>
-                      s.id === subtask.id ? subtask : s
-                    ),
-                  }
-                : task
-            )
-          );
-          setShowSubtaskModal(false);
-          setTaskToSubtask(null);
-          setEditingSubtask(null);
-        }}
+        onAdd={handleSubtaskAdd}
+        onUpdate={handleSubtaskUpdate}
         parentTask={taskToSubtask}
         editingSubtask={editingSubtask}
       />

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import useLocalStorageTasks from "../hooks/use-tasks";
 import users from "../data/users";
 
 import {
@@ -34,7 +33,6 @@ const WEEKDAYS = [
 ];
 
 export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
-  const { saveTask } = useLocalStorageTasks("tasks");
   const isEditMode = Boolean(taskToEdit);
 
   // Core task fields
@@ -42,7 +40,6 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("Medium");
   const [type, setType] = useState("custom"); // default type
-
   const [mainAssignee, setMainAssignee] = useState("");
   const [supportingAssignees, setSupportingAssignees] = useState([]);
 
@@ -54,6 +51,10 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
   const [dueWeekday, setDueWeekday] = useState(1);
   const [dueDateAbs, setDueDateAbs] = useState("");
 
+  // Form state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
   // Populate on edit / reset on open
   useEffect(() => {
     if (taskToEdit) {
@@ -61,10 +62,41 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       setDescription(taskToEdit.description || "");
       setPriority(taskToEdit.priority || "Medium");
       setType(taskToEdit.type || "custom");
-      setMainAssignee(taskToEdit.mainAssignee ?? "");
-      setSupportingAssignees(taskToEdit.supportingAssignees || []);
+      
+      // Handle both field names for backwards compatibility
+      const mainAssigneeValue = taskToEdit.mainAssigneeId || taskToEdit.mainAssignee || taskToEdit.main_assignee_id;
+      setMainAssignee(mainAssigneeValue ? String(mainAssigneeValue) : "");
+      
+      // Parse supporting assignees - could be JSON string or array
+      let supportingIds = [];
+      const supportingData = taskToEdit.supportingAssignees || taskToEdit.supporting_assignees;
+      if (supportingData) {
+        if (typeof supportingData === 'string') {
+          try {
+            supportingIds = JSON.parse(supportingData);
+          } catch (e) {
+            console.warn("Failed to parse supporting_assignees:", supportingData);
+          }
+        } else if (Array.isArray(supportingData)) {
+          supportingIds = supportingData;
+        }
+      }
+      setSupportingAssignees(supportingIds.map(String));
 
-      const sch = taskToEdit.schedule || { mode: "none", reset: "none" };
+      // Parse schedule - could be JSON string or object
+      let sch = { mode: "none", reset: "none" };
+      if (taskToEdit.schedule) {
+        if (typeof taskToEdit.schedule === 'string') {
+          try {
+            sch = JSON.parse(taskToEdit.schedule);
+          } catch (e) {
+            console.warn("Failed to parse schedule:", taskToEdit.schedule);
+          }
+        } else if (typeof taskToEdit.schedule === 'object') {
+          sch = taskToEdit.schedule;
+        }
+      }
+
       setMode(sch.mode || "none");
 
       const total = sch.countdownSeconds ?? 0;
@@ -80,6 +112,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         setDueDateAbs("");
       }
     } else {
+      // Reset form for new task
       setTitle("");
       setDescription("");
       setPriority("Medium");
@@ -93,6 +126,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       setDueWeekday(1);
       setDueDateAbs("");
     }
+    setError(null);
   }, [taskToEdit, open]);
 
   const toggleSupporting = (id) => {
@@ -144,29 +178,38 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
     return { mode: "none", reset: resetPolicy };
   };
 
-  const handleSubmit = () => {
-    if (!title.trim() || !mainAssignee) return;
+  const handleSubmit = async () => {
+    if (!title.trim() || !mainAssignee) {
+      setError("Title and main assignee are required");
+      return;
+    }
 
-    const taskData = {
-      id: taskToEdit?.id || Date.now(),
-      title: title.trim(),
-      description: description.trim(),
-      priority,
-      type,
-      mainAssignee: Number(mainAssignee),
-      supportingAssignees: supportingAssignees.map(Number),
-      completed: taskToEdit?.completed || false,
-      subtasks: taskToEdit?.subtasks || [],
-      createdAt: taskToEdit?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      schedule: buildSchedule(),
-    };
+    setIsSubmitting(true);
+    setError(null);
 
-    if (isEditMode) saveTask(taskData, taskToEdit.id);
-    else saveTask(taskData);
+    try {
+      const schedule = buildSchedule();
+      
+      const taskData = {
+        title: title.trim(),
+        description: description.trim(),
+        priority,
+        type,
+        main_assignee_id: Number(mainAssignee), // Use snake_case for backend
+        supporting_assignees: JSON.stringify(supportingAssignees.map(Number)), // Store as JSON string
+        completed: taskToEdit?.completed || false,
+        archived: taskToEdit?.archived || false,
+        schedule: JSON.stringify(schedule), // Store as JSON string
+      };
 
-    onAdd(taskData);
-    onClose();
+      await onAdd(taskData);
+      onClose();
+    } catch (err) {
+      console.error("Error submitting task:", err);
+      setError(err.message || "Failed to save task");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const isRecurring = type === "daily" || type === "weekly";
@@ -183,6 +226,12 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
           </DialogTitle>
         </DialogHeader>
 
+        {error && (
+          <div className="p-3 bg-red-100 text-red-800 rounded-lg mb-4">
+            <p className="text-sm">{error}</p>
+          </div>
+        )}
+
         {/* Title */}
         <div className="mb-3 text-sm">
           <Label htmlFor="title" className="mb-1 block">
@@ -194,6 +243,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="p-1 text-sm"
+            disabled={isSubmitting}
           />
         </div>
 
@@ -209,6 +259,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             className="p-1 text-sm"
+            disabled={isSubmitting}
           />
         </div>
 
@@ -216,7 +267,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         <div className="flex gap-3 mb-3 text-sm">
           <div className="flex-1">
             <Label className="mb-1 block">Priority</Label>
-            <Select value={priority} onValueChange={setPriority}>
+            <Select value={priority} onValueChange={setPriority} disabled={isSubmitting}>
               <SelectTrigger className="p-1 text-sm">
                 <SelectValue placeholder="Select priority" />
               </SelectTrigger>
@@ -235,6 +286,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
                 setType(v);
                 setMode("none");
               }}
+              disabled={isSubmitting}
             >
               <SelectTrigger className="p-1 text-sm">
                 <SelectValue placeholder="Select type" />
@@ -256,9 +308,10 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
           </Label>
           <select
             id="main-assignee"
-            className="w-full p-1 border rounded text-sm text-black"
+            className="w-full p-1 border rounded text-sm text-black disabled:opacity-50"
             value={mainAssignee}
             onChange={(e) => setMainAssignee(e.target.value)}
+            disabled={isSubmitting}
           >
             <option value="">Select</option>
             {users.map((u) => (
@@ -278,8 +331,9 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
                 <input
                   type="checkbox"
                   value={u.id}
-                  checked={supportingAssignees.includes(u.id)}
-                  onChange={() => toggleSupporting(u.id)}
+                  checked={supportingAssignees.includes(String(u.id))}
+                  onChange={() => toggleSupporting(String(u.id))}
+                  disabled={isSubmitting}
                 />
                 <span className="bg-yellow-100 text-yellow-800 px-1 py-0.5 rounded font-bold">
                   {u.initials}
@@ -300,6 +354,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
                 type="radio"
                 checked={mode === "none"}
                 onChange={() => setMode("none")}
+                disabled={isSubmitting}
               />
               None
             </label>
@@ -308,6 +363,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
                 type="radio"
                 checked={mode === "countdown"}
                 onChange={() => setMode("countdown")}
+                disabled={isSubmitting}
               />
               Countdown
             </label>
@@ -316,6 +372,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
                 type="radio"
                 checked={mode === "due"}
                 onChange={() => setMode("due")}
+                disabled={isSubmitting}
               />
               {type === "daily" || type === "weekly" ? "Due time" : "Due date"}
             </label>
@@ -337,6 +394,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
                   }
                   placeholder="Hours"
                   className="p-1 text-sm"
+                  disabled={isSubmitting}
                 />
                 <Input
                   type="number"
@@ -350,6 +408,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
                   }
                   placeholder="Minutes"
                   className="p-1 text-sm"
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
@@ -364,7 +423,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
             >
               {type === "weekly" && (
                 <select
-                  disabled={!showDueTimeRecurring}
+                  disabled={!showDueTimeRecurring || isSubmitting}
                   value={dueWeekday}
                   onChange={(e) => setDueWeekday(parseInt(e.target.value, 10))}
                   className="p-1 text-sm border rounded text-black"
@@ -378,7 +437,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
               )}
               <Input
                 type="time"
-                disabled={!showDueTimeRecurring}
+                disabled={!showDueTimeRecurring || isSubmitting}
                 value={dueTime}
                 onChange={(e) => setDueTime(e.target.value)}
                 className="p-1 text-sm"
@@ -393,7 +452,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
             >
               <Input
                 type="date"
-                disabled={!showAbsDue}
+                disabled={!showAbsDue || isSubmitting}
                 value={dueDateAbs}
                 onChange={(e) => setDueDateAbs(e.target.value)}
                 className="p-1 text-sm"
@@ -404,12 +463,12 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
 
         <DialogFooter className="mt-2 flex justify-end gap-2">
           <DialogClose asChild>
-            <Button variant="destructive" size="sm">
+            <Button variant="destructive" size="sm" disabled={isSubmitting}>
               Cancel
             </Button>
           </DialogClose>
-          <Button onClick={handleSubmit} size="sm">
-            {isEditMode ? "Save Changes" : "Add Task"}
+          <Button onClick={handleSubmit} size="sm" disabled={isSubmitting}>
+            {isSubmitting ? (isEditMode ? "Updating..." : "Creating...") : (isEditMode ? "Save Changes" : "Add Task")}
           </Button>
         </DialogFooter>
       </DialogContent>

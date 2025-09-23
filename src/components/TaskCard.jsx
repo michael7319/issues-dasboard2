@@ -10,7 +10,7 @@ const priorityBorderColors = {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// 🔹 helper to format dates safely
+// Helper to format dates safely
 const formatDate = (dateStr) => {
   if (!dateStr) return null;
   const d = new Date(dateStr);
@@ -22,7 +22,36 @@ const formatDate = (dateStr) => {
   });
 };
 
-// 🔹 real hook only for countdowns
+// Parse schedule from JSON string or object
+const parseSchedule = (schedule) => {
+  if (!schedule) return null;
+  if (typeof schedule === 'string') {
+    try {
+      return JSON.parse(schedule);
+    } catch (e) {
+      console.warn("Failed to parse schedule:", schedule);
+      return null;
+    }
+  }
+  return schedule;
+};
+
+// Parse assignees from JSON string or array
+const parseAssignees = (assignees) => {
+  if (!assignees) return [];
+  if (typeof assignees === 'string') {
+    try {
+      return JSON.parse(assignees);
+    } catch (e) {
+      console.warn("Failed to parse assignees:", assignees);
+      return [];
+    }
+  }
+  if (Array.isArray(assignees)) return assignees;
+  return [];
+};
+
+// Real hook only for countdowns
 const useCountdown = (item) => {
   const [timeLeft, setTimeLeft] = useState("--:--");
   const [expired, setExpired] = useState(false);
@@ -67,7 +96,7 @@ const useCountdown = (item) => {
   return { timeLeft, expired };
 };
 
-// 🔹 pure formatter (no hooks)
+// Pure formatter (no hooks)
 const getDueDisplay = (item, countdownValue) => {
   if (!item) return "--:--";
 
@@ -76,9 +105,9 @@ const getDueDisplay = (item, countdownValue) => {
   } else if (item.schedule?.mode === "due") {
     if (item.schedule.dueAt) {
       const formatted = formatDate(item.schedule.dueAt);
-      if (!formatted) return "TIME UP"; // invalid/expired
+      if (!formatted) return "TIME UP";
       const dueDate = new Date(item.schedule.dueAt);
-      if (dueDate < new Date()) return "TIME UP"; // past due
+      if (dueDate < new Date()) return "TIME UP";
       return formatted;
     } else if (item.type === "daily" && item.schedule.dueTime) {
       return `Daily @ ${item.schedule.dueTime}`;
@@ -99,7 +128,7 @@ const getDueDisplay = (item, countdownValue) => {
   return "--:--";
 };
 
-// 🔹 isolated Subtask component so we can use hooks safely
+// Isolated Subtask component so we can use hooks safely
 function SubtaskCard({
   sub,
   hoveredSubtaskId,
@@ -111,25 +140,36 @@ function SubtaskCard({
   parentId,
 }) {
   const isSubHovered = hoveredSubtaskId === sub.id;
-  const { timeLeft, expired } = useCountdown(sub);
-  const subDueDisplay = getDueDisplay(sub, timeLeft);
+  
+  // Parse subtask schedule
+  const subtaskSchedule = parseSchedule(sub.schedule);
+  const subtaskWithSchedule = { ...sub, schedule: subtaskSchedule };
+  const { timeLeft, expired } = useCountdown(subtaskWithSchedule);
+  const subDueDisplay = getDueDisplay(subtaskWithSchedule, timeLeft);
 
-  const mainSubAssignee = users.find((u) => u.id === sub.mainAssignee);
+  // Parse assignees with proper field mapping
+  const mainSubAssigneeId = sub.mainAssigneeId || sub.mainAssignee || sub.main_assignee_id;
+  const mainSubAssignee = users.find((u) => u.id === Number(mainSubAssigneeId));
+  
+  const supportingSubAssigneeIds = parseAssignees(sub.supportingAssignees || sub.supporting_assignees);
   const supportingSubAssignees = users.filter(
-    (u) => sub.supportingAssignees?.includes(u.id) && u.id !== sub.mainAssignee
+    (u) => supportingSubAssigneeIds.includes(u.id) && u.id !== Number(mainSubAssigneeId)
   );
 
   const handleSubtaskToggle = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     onUpdateSubtask(parentId, sub.id, { completed: !sub.completed });
   };
 
   const handleEditSubtask = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     onEditSubtask?.(sub);
   };
 
   const handleDeleteSubtask = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     onDeleteSubtask(parentId, sub.id);
   };
@@ -158,10 +198,7 @@ function SubtaskCard({
       className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md cursor-pointer"
       onMouseEnter={() => setHoveredSubtaskId(sub.id)}
       onMouseLeave={() => setHoveredSubtaskId(null)}
-      onClick={(e) => {
-        e.stopPropagation(); // ✅ prevent bubbling to TaskCard
-        onEditSubtask?.(sub);
-      }}
+      onClick={handleEditSubtask}
     >
       <div className="absolute flex justify-between items-center top-1 left-1 right-1 z-30">
         <span
@@ -182,23 +219,21 @@ function SubtaskCard({
       </div>
 
       <div className="pt-4">
-        <label
-          className="flex items-center gap-1 pr-8 cursor-pointer"
-          onClick={(e) => e.stopPropagation()} // ✅ prevent label click from bubbling
-        >
+        <div className="flex items-center gap-1 pr-8">
           <input
             type="checkbox"
             checked={sub.completed}
-            onChange={(e) => {
-              e.stopPropagation(); // ✅ prevent checkbox click from bubbling
-              handleSubtaskToggle(e);
-            }}
-            className="w-3 h-3 accent-green-500"
+            onChange={handleSubtaskToggle}
+            onClick={handleSubtaskToggle}
+            className="w-3 h-3 accent-green-500 cursor-pointer"
           />
-          <span className={sub.completed ? "line-through text-gray-400" : ""}>
+          <span 
+            className={`cursor-pointer ${sub.completed ? "line-through text-gray-400" : ""}`}
+            onClick={handleSubtaskToggle}
+          >
             {sub.title}
           </span>
-        </label>
+        </div>
       </div>
 
       {(mainSubAssignee || supportingSubAssignees.length > 0) && (
@@ -235,18 +270,23 @@ export default function TaskCard({
     setIsCompleted(task.completed || false);
   }, [task.completed]);
 
-  const main = users.find((u) => Number(u.id) === Number(task.mainAssignee));
+  // Parse assignees with proper field mapping - handle both camelCase and snake_case
+  const mainAssigneeId = task.mainAssigneeId || task.mainAssignee || task.main_assignee_id;
+  const main = users.find((u) => u.id === Number(mainAssigneeId));
+  
+  const supportingAssigneeIds = parseAssignees(task.supportingAssignees || task.supporting_assignees);
   const supporting = users.filter(
-    (u) =>
-      task.supportingAssignees?.includes(Number(u.id)) &&
-      Number(u.id) !== Number(task.mainAssignee)
+    (u) => supportingAssigneeIds.includes(u.id) && u.id !== Number(mainAssigneeId)
   );
 
-  // ✅ parent task countdown
-  const { timeLeft, expired } = useCountdown(task);
-  const dueDisplay = getDueDisplay(task, timeLeft);
+  // Parse task schedule
+  const taskSchedule = parseSchedule(task.schedule);
+  const taskWithSchedule = { ...task, schedule: taskSchedule };
+  const { timeLeft, expired } = useCountdown(taskWithSchedule);
+  const dueDisplay = getDueDisplay(taskWithSchedule, timeLeft);
 
   const handleToggle = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     const newStatus = !isCompleted;
     setIsCompleted(newStatus);
@@ -254,16 +294,19 @@ export default function TaskCard({
   };
 
   const handleAddSubtaskClick = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     onAddSubtask?.();
   };
 
   const handleEditClick = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     onEdit(task);
   };
 
   const handleDeleteClick = (e) => {
+    e.preventDefault();
     e.stopPropagation();
     onDelete(task.id);
   };
@@ -293,7 +336,7 @@ export default function TaskCard({
   return (
     <div
       className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px] cursor-pointer"
-      onClick={() => onEdit(task)} // ✅ Click task card = edit modal
+      onClick={() => onEdit(task)}
     >
       <div
         className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md"
@@ -356,20 +399,21 @@ export default function TaskCard({
 
         {/* Status + Add Subtask */}
         <div className="flex items-center justify-between mt-1">
-          <label
-            className="flex items-center gap-1 text-[10px] cursor-pointer"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="flex items-center gap-1 text-[10px]">
             <input
               type="checkbox"
               checked={isCompleted}
               onChange={handleToggle}
-              className="w-3 h-3 accent-green-500"
+              onClick={handleToggle}
+              className="w-3 h-3 accent-green-500 cursor-pointer"
             />
-            <span className={isCompleted ? "text-green-400" : "text-yellow-400"}>
+            <span 
+              className={`cursor-pointer ${isCompleted ? "text-green-400" : "text-yellow-400"}`}
+              onClick={handleToggle}
+            >
               {isCompleted ? "Done" : "Pending"}
             </span>
-          </label>
+          </div>
           <button
             type="button"
             onClick={handleAddSubtaskClick}

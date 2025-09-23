@@ -3,10 +3,10 @@ import TaskCard from "./TaskCard";
 import AddTaskModal from "./AddTaskModal";
 import AddSubtaskModal from "./AddSubtaskModal";
 import users from "../data/users";
-import defaultTasks from "../data/tasks";
 
-export default function TimeframeView({ theme }) {
-  const [tasks, setTasks] = useState([]);
+const API_BASE = "http://localhost:8080";
+
+export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive }) {
   const [selectedTimeframe, setSelectedTimeframe] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -20,20 +20,8 @@ export default function TimeframeView({ theme }) {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
-
-  useEffect(() => {
-    const stored = localStorage.getItem("tasks");
-    if (!stored || stored === "[]" || stored === "null") {
-      setTasks(defaultTasks);
-      localStorage.setItem("tasks", JSON.stringify(defaultTasks));
-    } else {
-      setTasks(JSON.parse(stored));
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("tasks", JSON.stringify(tasks));
-  }, [tasks]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   // Listen for addTask event from Sidebar
   useEffect(() => {
@@ -45,17 +33,91 @@ export default function TimeframeView({ theme }) {
     return () => window.removeEventListener("addTask", handleAddTaskEvent);
   }, []);
 
-  const handleAddOrEditTask = (newTask) => {
-    setTasks((prev) => {
-      const exists = prev.find((t) => t.id === newTask.id);
-      if (exists) {
-        return prev.map((t) => (t.id === newTask.id ? newTask : t));
+  // API call to create a subtask
+  const createSubtask = async (taskId, subtaskData) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subtaskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      return [newTask, ...prev];
-    });
+      
+      const newSubtask = await response.json();
+      return newSubtask;
+    } catch (err) {
+      console.error("Error creating subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    setEditingTask(null);
-    setIsModalOpen(false);
+  // API call to update a subtask
+  const updateSubtask = async (taskId, subtaskId, subtaskData) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subtaskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const updatedSubtask = await response.json();
+      return updatedSubtask;
+    } catch (err) {
+      console.error("Error updating subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // API call to delete a subtask
+  const deleteSubtask = async (taskId, subtaskId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+    } catch (err) {
+      console.error("Error deleting subtask:", err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddOrEditTask = async (newTask) => {
+    try {
+      if (editingTask) {
+        // Update existing task
+        await onEdit(editingTask.id, newTask);
+      } else {
+        // Create new task
+        await onCreate(newTask);
+      }
+      
+      setEditingTask(null);
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error("Error in handleAddOrEditTask:", err);
+    }
   };
 
   const handleEditTask = (task) => {
@@ -63,62 +125,101 @@ export default function TimeframeView({ theme }) {
     setIsModalOpen(true);
   };
 
-  const handleUpdateTask = (updatedTask, task_id) => {
-    setTasks((prevTasks) =>
-      prevTasks.map((task) => (task.id === task_id ? updatedTask : task))
-    );
-  };
-
-  const handleDeleteTask = (taskId) => {
-    setTasks((prev) => prev.filter((task) => task.id !== taskId));
-  };
-
-  const handleDeleteSubtask = (taskId, subtaskId) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              subtasks: task.subtasks.filter((s) => s.id !== subtaskId),
-            }
-          : task
-      )
-    );
-  };
-
-  const handleUpdateSubtask = (taskId, subtaskId, updates) => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              subtasks: task.subtasks.map((s) =>
-                s.id === subtaskId ? { ...s, ...updates } : s
-              ),
-            }
-          : task
-      )
-    );
-  };
-
-  const handleMarkComplete = (taskId, completed) => {
-    setTasks((prev) =>
-      prev.map((task) => (task.id === taskId ? { ...task, completed } : task))
-    );
+  const handleMarkComplete = async (taskId, completed) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        const updatedTaskData = { 
+          ...task, 
+          completed,
+        };
+        await onEdit(taskId, updatedTaskData);
+      }
+    } catch (err) {
+      console.error("Error completing task:", err);
+      setError(err.message);
+    }
   };
 
   const handleAddSubtask = (task) => {
-    console.log("Adding subtask to task:", task.id);
     setTaskToSubtask(task);
     setEditingSubtask(null);
     setShowSubtaskModal(true);
   };
 
   const handleEditSubtask = (task, subtask) => {
-    console.log("Editing subtask:", subtask.id);
     setTaskToSubtask(task);
     setEditingSubtask(subtask);
     setShowSubtaskModal(true);
+  };
+
+  const handleSubtaskAdd = async (taskId, subtask) => {
+    try {
+      const newSubtask = await createSubtask(taskId, subtask);
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), newSubtask] } : t
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
+  };
+
+  const handleSubtaskUpdate = async (taskId, subtask) => {
+    try {
+      const updatedSubtask = await updateSubtask(taskId, subtask.id, subtask);
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskId
+            ? { ...t, subtasks: (t.subtasks || []).map(s => s.id === subtask.id ? updatedSubtask : s) }
+            : t
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
+  };
+
+  const handleDeleteSubtask = async (taskId, subtaskId) => {
+    try {
+      await deleteSubtask(taskId, subtaskId);
+      setTasks(prev =>
+        prev.map(t =>
+          t.id === taskId
+            ? { ...t, subtasks: (t.subtasks || []).filter(s => s.id !== subtaskId) }
+            : t
+        )
+      );
+    } catch (err) {
+      // Error already handled in API function
+    }
+  };
+
+  const handleUpdateSubtask = async (taskId, subtaskId, updates) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      const subtask = task?.subtasks?.find(s => s.id === subtaskId);
+      
+      if (subtask) {
+        const updatedSubtaskData = { ...subtask, ...updates };
+        const updatedSubtask = await updateSubtask(taskId, subtaskId, updatedSubtaskData);
+        setTasks(prev =>
+          prev.map(t =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  subtasks: (t.subtasks || []).map(s =>
+                    s.id === subtaskId ? updatedSubtask : s
+                  ),
+                }
+              : t
+          )
+        );
+      }
+    } catch (err) {
+      // Error already handled in API function
+    }
   };
 
   const handleAddTask = () => {
@@ -169,10 +270,38 @@ export default function TimeframeView({ theme }) {
   const filterTask = (task) => {
     const matchesPriority =
       priorityFilter === "all" || task.priority === priorityFilter;
-    const matchesAssignee =
-      assigneeFilter === "all" ||
-      Number(task.mainAssignee) === Number(assigneeFilter) ||
-      task.supportingAssignees.includes(Number(assigneeFilter));
+    
+    // Fixed: Use correct field names from backend
+    const matchesAssignee = assigneeFilter === "all" || 
+      Number(task.mainAssigneeId) === Number(assigneeFilter) || 
+      Number(task.main_assignee_id) === Number(assigneeFilter) || // Handle both possible field names
+      (task.supportingAssignees && (() => {
+        let supporting = [];
+        if (typeof task.supportingAssignees === 'string') {
+          try {
+            supporting = JSON.parse(task.supportingAssignees);
+          } catch (e) {
+            console.warn("Failed to parse supporting_assignees:", task.supportingAssignees);
+          }
+        } else if (Array.isArray(task.supportingAssignees)) {
+          supporting = task.supportingAssignees;
+        }
+        return supporting.includes(Number(assigneeFilter));
+      })()) || 
+      (task.supporting_assignees && (() => {
+        let supporting = [];
+        if (typeof task.supporting_assignees === 'string') {
+          try {
+            supporting = JSON.parse(task.supporting_assignees);
+          } catch (e) {
+            console.warn("Failed to parse supporting_assignees:", task.supporting_assignees);
+          }
+        } else if (Array.isArray(task.supporting_assignees)) {
+          supporting = task.supporting_assignees;
+        }
+        return supporting.includes(Number(assigneeFilter));
+      })());
+
     const matchesSearch = task.title
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
@@ -185,8 +314,29 @@ export default function TimeframeView({ theme }) {
     loose: "gap-[24px]",
   };
 
+  if (error) {
+    return (
+      <div className="p-4 bg-red-100 text-red-800 rounded-lg">
+        <h2 className="text-lg font-bold">Something went wrong.</h2>
+        <p>{error}</p>
+        <button
+          className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          onClick={() => setError(null)}
+        >
+          Dismiss Error
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex flex-col p-3 gap-4">
+      {loading && (
+        <div className="absolute top-4 right-4 z-40">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+        </div>
+      )}
+
       {/* Filters & search controls */}
       <div className={`sticky top-0 z-10 flex flex-wrap items-center gap-3 p-3 rounded-lg shadow ${theme === "dark" ? "bg-blue-950" : "bg-gray-900/80"} backdrop-blur-sm`}>
         <div className="flex items-center gap-2">
@@ -285,7 +435,7 @@ export default function TimeframeView({ theme }) {
                     <TaskCard
                       task={task}
                       onEdit={handleEditTask}
-                      onDelete={handleDeleteTask}
+                      onDelete={onDelete}
                       onComplete={handleMarkComplete}
                       onAddSubtask={() => handleAddSubtask(task)}
                       onEditSubtask={(subtask) =>
@@ -308,7 +458,8 @@ export default function TimeframeView({ theme }) {
       <button
         type="button"
         onClick={handleAddTask}
-        className="fixed z-50 px-6 py-3 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700"
+        disabled={loading}
+        className="fixed z-50 px-6 py-3 text-sm font-bold text-white bg-blue-600 rounded-full shadow-lg bottom-6 right-6 hover:bg-blue-700 disabled:opacity-50"
       >
         + Add Task
       </button>
@@ -332,34 +483,8 @@ export default function TimeframeView({ theme }) {
           setTaskToSubtask(null);
           setEditingSubtask(null);
         }}
-        onAdd={(taskId, subtask) => {
-          setTasks((prev) =>
-            prev.map((task) =>
-              task.id === taskId
-                ? { ...task, subtasks: [...(task.subtasks || [], subtask)] }
-                : task
-            )
-          );
-          setShowSubtaskModal(false);
-          setTaskToSubtask(null);
-        }}
-        onUpdate={(taskId, subtask) => {
-          setTasks((prev) =>
-            prev.map((task) =>
-              task.id === taskId
-                ? {
-                    ...task,
-                    subtasks: task.subtasks.map((s) =>
-                      s.id === subtask.id ? subtask : s
-                    ),
-                  }
-                : task
-            )
-          );
-          setShowSubtaskModal(false);
-          setTaskToSubtask(null);
-          setEditingSubtask(null);
-        }}
+        onAdd={handleSubtaskAdd}
+        onUpdate={handleSubtaskUpdate}
         parentTask={taskToSubtask}
         editingSubtask={editingSubtask}
       />
