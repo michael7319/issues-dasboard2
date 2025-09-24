@@ -261,6 +261,7 @@ export default function TaskCard({
   onComplete,
   onDeleteSubtask,
   onUpdateSubtask,
+  onArchive,
 }) {
   const [isCompleted, setIsCompleted] = useState(task.completed || false);
   const [isHovered, setIsHovered] = useState(false);
@@ -311,6 +312,12 @@ export default function TaskCard({
     onDelete(task.id);
   };
 
+  const handleArchiveClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onArchive?.(task.id);
+  };
+
   const getUserInitials = (user) => {
     if (!user) return "";
     const parts = user.fullName.trim().split(" ");
@@ -345,7 +352,7 @@ export default function TaskCard({
       >
         {/* Top Buttons Row */}
         <div className="absolute flex justify-between items-center top-1 left-1 right-1 px-1 z-30">
-          <button type="button" title="Archive" onClick={(e) => e.stopPropagation()}>
+          <button type="button" title={task.archived ? "Unarchive" : "Archive"} onClick={handleArchiveClick}>
             <Archive size={12} className="text-gray-400 hover:text-yellow-400" />
           </button>
           <div className="flex gap-1">

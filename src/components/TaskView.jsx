@@ -32,6 +32,37 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
     return () => window.removeEventListener("addTask", handleAddTaskEvent);
   }, []);
 
+  // Build full backend-compatible subtask payload (snake_case + serialized strings)
+  const buildSubtaskPayload = (subtask, overrides = {}) => {
+    const mainAssigneeId =
+      subtask.mainAssigneeId || subtask.mainAssignee || subtask.main_assignee_id || null;
+
+    let supporting = subtask.supportingAssignees || subtask.supporting_assignees || [];
+    if (typeof supporting === "string") {
+      try { supporting = JSON.parse(supporting); } catch { supporting = []; }
+    }
+    if (!Array.isArray(supporting)) supporting = [];
+
+    const schedule =
+      typeof subtask.schedule === "string"
+        ? subtask.schedule
+        : subtask.schedule
+        ? JSON.stringify(subtask.schedule)
+        : null;
+
+    return {
+      title: subtask.title || "",
+      completed:
+        typeof overrides.completed === "boolean" ? overrides.completed : !!subtask.completed,
+      main_assignee_id:
+        mainAssigneeId === null || mainAssigneeId === undefined
+          ? null
+          : Number(mainAssigneeId) || null,
+      supporting_assignees: JSON.stringify(supporting.map(Number)),
+      schedule,
+    };
+  };
+
   // API call to create a subtask
   const createSubtask = async (taskId, subtaskData) => {
     try {
@@ -160,8 +191,9 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
       const subtask = task?.subtasks?.find(s => s.id === subtaskId);
       
       if (subtask) {
-        const updatedSubtaskData = { ...subtask, ...updates };
-        const updatedSubtask = await updateSubtask(taskId, subtaskId, updatedSubtaskData);
+        // Build backend-compatible payload to avoid wiping fields
+        const payload = buildSubtaskPayload({ ...subtask, ...updates }, updates);
+        const updatedSubtask = await updateSubtask(taskId, subtaskId, payload);
         setTasks(prev =>
           prev.map(t =>
             t.id === taskId
@@ -218,7 +250,9 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
 
   const handleSubtaskUpdate = async (taskId, subtask) => {
     try {
-      const updatedSubtask = await updateSubtask(taskId, subtask.id, subtask);
+      // Normalize entire subtask before sending
+      const payload = buildSubtaskPayload(subtask);
+      const updatedSubtask = await updateSubtask(taskId, subtask.id, payload);
       setTasks(prev =>
         prev.map(t =>
           t.id === taskId

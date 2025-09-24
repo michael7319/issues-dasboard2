@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -15,34 +16,40 @@ import (
 type Task struct {
 	ID                  int64     `json:"id" db:"id"`
 	Title               string    `json:"title" db:"title"`
-	Description         string    `json:"description" db:"description"`
-	Priority            string    `json:"priority" db:"priority"`
-	Type                string    `json:"type" db:"type"`
+	Description         *string   `json:"description" db:"description"`
+	Priority            *string   `json:"priority" db:"priority"`
+	Type                *string   `json:"type" db:"type"`
 	Completed           bool      `json:"completed" db:"completed"`
 	Archived            bool      `json:"archived" db:"archived"`
-	CreatedAt           string    `json:"created_at" db:"created_at"`
-	MainAssigneeID      int       `json:"main_assignee_id" db:"main_assignee_id"`
-	SupportingAssignees string    `json:"supporting_assignees" db:"supporting_assignees"` // JSON string
-	Schedule            string    `json:"schedule" db:"schedule"`                         // JSON string
+	CreatedAt           time.Time `json:"created_at" db:"created_at"`
+	MainAssigneeID      *int      `json:"main_assignee_id" db:"main_assignee_id"`
+	SupportingAssignees *string   `json:"supporting_assignees" db:"supporting_assignees"` // JSON string
+	Schedule            *string   `json:"schedule" db:"schedule"`                         // JSON string
 	Subtasks            []Subtask `json:"subtasks,omitempty"`
 }
 
 // Subtask mirrors frontend
 type Subtask struct {
-	ID                  int64  `json:"id" db:"id"`
-	TaskID              int64  `json:"task_id" db:"task_id"`
-	Title               string `json:"title" db:"title"`
-	Completed           bool   `json:"completed" db:"completed"`
-	MainAssigneeID      int    `json:"main_assignee_id" db:"main_assignee_id"`
-	SupportingAssignees string `json:"supporting_assignees" db:"supporting_assignees"` // JSON string
-	Schedule            string `json:"schedule" db:"schedule"`                         // JSON string
+	ID                  int64   `json:"id" db:"id"`
+	TaskID              int64   `json:"task_id" db:"task_id"`
+	Title               string  `json:"title" db:"title"`
+	Completed           bool    `json:"completed" db:"completed"`
+	MainAssigneeID      *int    `json:"main_assignee_id" db:"main_assignee_id"`
+	SupportingAssignees *string `json:"supporting_assignees" db:"supporting_assignees"` // JSON string
+	Schedule            *string `json:"schedule" db:"schedule"`                         // JSON string
+}
+
+// User for exposing real users from DB
+type User struct {
+	ID   int    `json:"id" db:"id"`
+	Name string `json:"name" db:"name"`
 }
 
 var db *sqlx.DB
 
 func main() {
 	// Connect to SQL Server
-	connStr := "server=MICHAEL,1433;database=task_manager_db;trusted_connection=true;"
+	connStr := "server=MICHAEL,1433;database=issues_tasks_db;trusted_connection=true;TrustServerCertificate=true;"
 	var err error
 	db, err = sqlx.Open("mssql", connStr)
 	if err != nil {
@@ -59,6 +66,17 @@ func main() {
 	// Gin router with CORS
 	r := gin.Default()
 	r.Use(cors.Default())
+
+	// GET /users - return actual users from DB
+	r.GET("/users", func(c *gin.Context) {
+		var users []User
+		err := db.Select(&users, "SELECT id, name FROM Users ORDER BY name ASC")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, users)
+	})
 
 	// GET /tasks - Fetch all tasks with subtasks
 	r.GET("/tasks", func(c *gin.Context) {
@@ -89,11 +107,11 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
-		// Validate that the main_assignee_id exists in Users table if it's not 0
-		if task.MainAssigneeID != 0 {
+
+		// Validate that the main_assignee_id exists in Users table if it's not 0 / not nil
+		if task.MainAssigneeID != nil && *task.MainAssigneeID != 0 {
 			var userExists bool
-			err := db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", task.MainAssigneeID)
+			err := db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", *task.MainAssigneeID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
 				return
@@ -103,22 +121,24 @@ func main() {
 				return
 			}
 		}
-		
-		res, err := db.Exec(
+
+		row := db.QueryRowx(
 			`INSERT INTO Tasks (title, description, priority, type, main_assignee_id, supporting_assignees, schedule, completed, archived)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+			 SELECT CAST(SCOPE_IDENTITY() AS bigint);`,
 			task.Title, task.Description, task.Priority, task.Type, task.MainAssigneeID, task.SupportingAssignees,
-			task.Schedule, task.Completed, task.Archived)
-		if err != nil {
+			task.Schedule, task.Completed, task.Archived,
+		)
+		var id int64
+		if err := row.Scan(&id); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		id, _ := res.LastInsertId()
 		task.ID = id
 		c.JSON(http.StatusCreated, task)
 	})
 
-	// PUT /tasks/:id - Update task (e.g., for drag-and-drop)
+	// PUT /tasks/:id - Update task
 	r.PUT("/tasks/:id", func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
@@ -130,11 +150,11 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
-		// Validate that the main_assignee_id exists in Users table if it's not 0
-		if task.MainAssigneeID != 0 {
+
+		// Validate that the main_assignee_id exists in Users table if it's not 0 / not nil
+		if task.MainAssigneeID != nil && *task.MainAssigneeID != 0 {
 			var userExists bool
-			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", task.MainAssigneeID)
+			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", *task.MainAssigneeID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
 				return
@@ -144,7 +164,7 @@ func main() {
 				return
 			}
 		}
-		
+
 		_, err = db.Exec(
 			`UPDATE Tasks SET title = ?, description = ?, priority = ?, type = ?, main_assignee_id = ?,
 			 supporting_assignees = ?, schedule = ?, completed = ?, archived = ?
@@ -155,7 +175,8 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, task) // Return full task
+		task.ID = id
+		c.JSON(http.StatusOK, task)
 	})
 
 	// DELETE /tasks/:id
@@ -185,11 +206,11 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
-		// Validate that the main_assignee_id exists in Users table if it's not 0
-		if subtask.MainAssigneeID != 0 {
+
+		// Validate main_assignee_id if provided
+		if subtask.MainAssigneeID != nil && *subtask.MainAssigneeID != 0 {
 			var userExists bool
-			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", subtask.MainAssigneeID)
+			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", *subtask.MainAssigneeID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
 				return
@@ -199,16 +220,17 @@ func main() {
 				return
 			}
 		}
-		
-		res, err := db.Exec(
+
+		row := db.QueryRowx(
 			`INSERT INTO Subtasks (task_id, title, completed, main_assignee_id, supporting_assignees, schedule)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
+			 VALUES (?, ?, ?, ?, ?, ?);
+			 SELECT CAST(SCOPE_IDENTITY() AS bigint);`,
 			taskID, subtask.Title, subtask.Completed, subtask.MainAssigneeID, subtask.SupportingAssignees, subtask.Schedule)
-		if err != nil {
+		var id int64
+		if err := row.Scan(&id); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		id, _ := res.LastInsertId()
 		subtask.ID = id
 		subtask.TaskID = taskID
 		c.JSON(http.StatusCreated, subtask)
@@ -231,11 +253,11 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
-		// Validate that the main_assignee_id exists in Users table if it's not 0
-		if subtask.MainAssigneeID != 0 {
+
+		// Validate main_assignee_id if provided
+		if subtask.MainAssigneeID != nil && *subtask.MainAssigneeID != 0 {
 			var userExists bool
-			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", subtask.MainAssigneeID)
+			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", *subtask.MainAssigneeID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
 				return
@@ -245,7 +267,7 @@ func main() {
 				return
 			}
 		}
-		
+
 		_, err = db.Exec(
 			`UPDATE Subtasks SET title = ?, completed = ?, main_assignee_id = ?, supporting_assignees = ?, schedule = ?
 			 WHERE id = ? AND task_id = ?`,

@@ -7,7 +7,7 @@ const users = [
   { id: 6, fullName: "Emmanuel", initials: "EM" },
   { id: 7, fullName: "Michael", initials: "MI" },
   { id: 8, fullName: "Abdul", initials: "AB" },
-  { id: 8, fullName: "Gift", initials: "GI" },
+  { id: 9, fullName: "Gift", initials: "GI" },
 ];
 
 export default users;

@@ -125,6 +125,16 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
     setIsModalOpen(true);
   };
 
+  const handleArchiveTask = async (taskId) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      const payload = { ...task, archived: !task.archived };
+      await onEdit(taskId, payload);
+      setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, archived: payload.archived } : t)));
+    } catch (err) {}
+  };
+
   const handleMarkComplete = async (taskId, completed) => {
     try {
       const task = tasks.find(t => t.id === taskId);
@@ -443,6 +453,7 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
                       }
                       onDeleteSubtask={handleDeleteSubtask}
                       onUpdateSubtask={handleUpdateSubtask}
+                      onArchive={handleArchiveTask}
                     />
                   </div>
                 ))}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { DndContext, closestCenter, useSensor, useSensors, PointerSensor, useDroppable, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -18,6 +18,8 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
   const [activeId, setActiveId] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
   const [loading, setLoading] = useState(false);
+  const prevCompletedRef = useRef(null);
+  const lastOverContainerRef = useRef(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -34,6 +36,81 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
     window.addEventListener("addTask", handleAddTaskEvent);
     return () => window.removeEventListener("addTask", handleAddTaskEvent);
   }, []);
+
+  // Helper: safe parse JSON
+  const safeParse = (value, fallback) => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  };
+
+  // Helper: build full backend-compatible payload (snake_case + serialized fields)
+  const buildTaskPayload = (task, overrides = {}) => {
+    const mainAssigneeId =
+      task.mainAssigneeId || task.mainAssignee || task.main_assignee_id || null;
+
+    let supporting = task.supportingAssignees || task.supporting_assignees || [];
+    if (typeof supporting === "string") {
+      supporting = safeParse(supporting, []);
+    }
+    if (!Array.isArray(supporting)) supporting = [];
+
+    const schedule =
+      typeof task.schedule === "string"
+        ? task.schedule
+        : task.schedule
+        ? JSON.stringify(task.schedule)
+        : null;
+
+    return {
+      title: task.title || "",
+      description: task.description ?? "",
+      priority: task.priority ?? "Medium",
+      type: task.type ?? "custom",
+      main_assignee_id:
+        mainAssigneeId === null || mainAssigneeId === undefined
+          ? null
+          : Number(mainAssigneeId) || null,
+      supporting_assignees: JSON.stringify(supporting.map(Number)),
+      schedule,
+      completed:
+        typeof overrides.completed === "boolean" ? overrides.completed : !!task.completed,
+      archived: !!task.archived,
+    };
+  };
+
+  // Helper: build full backend-compatible subtask payload (snake_case + serialized fields)
+  const buildSubtaskPayload = (subtask, overrides = {}) => {
+    const mainAssigneeId =
+      subtask.mainAssigneeId || subtask.mainAssignee || subtask.main_assignee_id || null;
+
+    let supporting = subtask.supportingAssignees || subtask.supporting_assignees || [];
+    if (typeof supporting === "string") {
+      supporting = safeParse(supporting, []);
+    }
+    if (!Array.isArray(supporting)) supporting = [];
+
+    const schedule =
+      typeof subtask.schedule === "string"
+        ? subtask.schedule
+        : subtask.schedule
+        ? JSON.stringify(subtask.schedule)
+        : null;
+
+    return {
+      title: subtask.title || "",
+      completed:
+        typeof overrides.completed === "boolean" ? overrides.completed : !!subtask.completed,
+      main_assignee_id:
+        mainAssigneeId === null || mainAssigneeId === undefined
+          ? null
+          : Number(mainAssigneeId) || null,
+      supporting_assignees: JSON.stringify(supporting.map(Number)),
+      schedule,
+    };
+  };
 
   // API call to create a new task
   const createTask = async (taskData) => {
@@ -64,7 +141,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
     }
   };
 
-  // API call to update a task
+  // API call to update a task (expects full, backend-compatible payload)
   const updateTask = async (taskId, taskData) => {
     try {
       setLoading(true);
@@ -180,6 +257,19 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
     }
   };
 
+  // Archive/unarchive task
+  const handleArchiveTask = async (taskId) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      const payload = buildTaskPayload({ ...task, archived: !task.archived });
+      const updated = await updateTask(taskId, payload);
+      setTasks(prev => prev.map(t => (t.id === taskId ? updated : t)));
+    } catch (err) {
+      // error handled upstream
+    }
+  };
+
   const handleAddSubtask = (task) => {
     setTaskToSubtask(task);
     setEditingSubtask(null);
@@ -207,7 +297,8 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
   const handleSubtaskUpdate = async (taskId, subtask) => {
     try {
-      const updatedSubtask = await updateSubtask(taskId, subtask.id, subtask);
+      const payload = buildSubtaskPayload(subtask);
+      const updatedSubtask = await updateSubtask(taskId, subtask.id, payload);
       setTasks(prev =>
         prev.map(t =>
           t.id === taskId
@@ -241,8 +332,9 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
       const subtask = task?.subtasks?.find(s => s.id === subtaskId);
       
       if (subtask) {
-        const updatedSubtaskData = { ...subtask, ...updates };
-        const updatedSubtask = await updateSubtask(taskId, subtaskId, updatedSubtaskData);
+        const merged = { ...subtask, ...updates };
+        const payload = buildSubtaskPayload(merged, updates);
+        const updatedSubtask = await updateSubtask(taskId, subtaskId, payload);
         setTasks(prev =>
           prev.map(t =>
             t.id === taskId
@@ -265,20 +357,15 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
     try {
       const task = tasks.find(t => t.id === taskId);
       if (task) {
-        const updatedTaskData = { 
-          ...task, 
-          completed,
-          // If marking as complete, also complete all subtasks
-          // If marking as incomplete, leave subtasks as they are
-        };
-        
-        const updatedTask = await updateTask(taskId, updatedTaskData);
-        
+        const payload = buildTaskPayload(task, { completed });
+        const updatedTask = await updateTask(taskId, payload);
+
         // If we have subtasks and we're completing the task, update them too
         if (completed && task.subtasks && task.subtasks.length > 0) {
-          const subtaskUpdatePromises = task.subtasks.map(subtask =>
-            updateSubtask(taskId, subtask.id, { ...subtask, completed: true })
-          );
+          const subtaskUpdatePromises = task.subtasks.map(subtask => {
+            const subPayload = buildSubtaskPayload(subtask, { completed: true });
+            return updateSubtask(taskId, subtask.id, subPayload);
+          });
           await Promise.all(subtaskUpdatePromises);
         }
         
@@ -293,6 +380,10 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
     setActiveId(event.active.id);
     const task = tasks.find(t => t.id === event.active.id);
     setActiveTask(task);
+    // Remember original completion state (based on container at drag start)
+    prevCompletedRef.current = getTaskContainer(task) === "Done";
+    // Initialize last over container to the starting container
+    lastOverContainerRef.current = getTaskContainer(task);
   };
 
   const handleDragOver = (event) => {
@@ -322,6 +413,9 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
     }
 
     if (!overContainer) return;
+
+    // Track last-known container during drag for reliable drop resolution
+    lastOverContainerRef.current = overContainer;
 
     const activeTask = tasks.find(t => t.id === activeId);
     const activeContainer = getTaskContainer(activeTask);
@@ -369,15 +463,27 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
     setActiveId(null);
     setActiveTask(null);
     
-    if (!over) return;
+    if (!over) {
+      prevCompletedRef.current = null;
+      lastOverContainerRef.current = null;
+      return;
+    }
 
     const activeId = active.id;
     const overId = over.id;
 
-    if (activeId === overId) return;
+    if (activeId === overId) {
+      prevCompletedRef.current = null;
+      lastOverContainerRef.current = null;
+      return;
+    }
 
-    const activeTask = tasks.find(t => t.id === activeId);
-    if (!activeTask) return;
+    const activeTaskNow = tasks.find(t => t.id === activeId);
+    if (!activeTaskNow) {
+      prevCompletedRef.current = null;
+      lastOverContainerRef.current = null;
+      return;
+    }
 
     // Determine the target container
     const overData = over.data?.current;
@@ -392,37 +498,46 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
       }
     }
 
-    if (overContainer && overContainer !== getTaskContainer(activeTask)) {
-      // Task moved to different container - update in backend
+    // Fallback to last-known container when resolution fails
+    if (!overContainer && lastOverContainerRef.current) {
+      overContainer = lastOverContainerRef.current;
+    }
+
+    if (overContainer) {
+      // Task moved to different container - update in backend if state actually changed from start
       const newCompleted = overContainer === "Done";
-      
-      try {
-        const updatedTaskData = {
-          ...activeTask,
-          completed: newCompleted
-        };
+      const wasCompleted = prevCompletedRef.current;
 
-        await updateTask(activeId, updatedTaskData);
+      if (newCompleted !== wasCompleted) {
+        try {
+          const payload = buildTaskPayload(activeTaskNow, { completed: newCompleted });
+          await updateTask(activeId, payload);
 
-        // Update subtasks if needed
-        if (activeTask.subtasks && activeTask.subtasks.length > 0) {
-          const subtaskUpdatePromises = activeTask.subtasks.map(subtask =>
-            updateSubtask(activeId, subtask.id, { ...subtask, completed: newCompleted })
-          );
-          await Promise.all(subtaskUpdatePromises);
+          // Update subtasks if needed
+          if (activeTaskNow.subtasks && activeTaskNow.subtasks.length > 0) {
+            const subtaskUpdatePromises = activeTaskNow.subtasks.map(subtask => {
+              const subPayload = buildSubtaskPayload(subtask, { completed: newCompleted });
+              return updateSubtask(activeId, subtask.id, subPayload);
+            });
+            await Promise.all(subtaskUpdatePromises);
+          }
+        } catch (err) {
+          // Revert optimistic update on error
+          setTasks(prev => prev.map(t => t.id === activeId ? activeTaskNow : t));
         }
-      } catch (err) {
-        // Revert optimistic update on error
-        setTasks(prev => prev.map(t => t.id === activeId ? activeTask : t));
       }
     }
+
+    // Clear refs
+    prevCompletedRef.current = null;
+    lastOverContainerRef.current = null;
 
     // Handle reordering within the same container if needed
     const activeIndex = tasks.findIndex(t => t.id === activeId);
     const overIndex = tasks.findIndex(t => t.id === overId);
     
     if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
-      const activeContainer = getTaskContainer(activeTask);
+      const activeContainer = getTaskContainer(activeTaskNow);
       const overTask = tasks.find(t => t.id === overId);
       const overContainer = getTaskContainer(overTask);
 
@@ -564,6 +679,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
                               onComplete={handleCompleteTask}
                               onDeleteSubtask={handleDeleteSubtask}
                               onUpdateSubtask={handleUpdateSubtask}
+                              onArchive={handleArchiveTask}
                             />
                           ) : null
                         )}
@@ -585,6 +701,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
                               onComplete={handleCompleteTask}
                               onDeleteSubtask={handleDeleteSubtask}
                               onUpdateSubtask={handleUpdateSubtask}
+                              onArchive={handleArchiveTask}
                             />
                           ) : null
                         )}
