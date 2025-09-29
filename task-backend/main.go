@@ -53,7 +53,6 @@ func main() {
 	// ...existing code...
 
 	// Connect to SQL Server
-
 	connStr := "server=MICHAEL,1433;database=issues_tasks_db;trusted_connection=true;TrustServerCertificate=true;"
 	var err error
 	db, err = sqlx.Open("mssql", connStr)
