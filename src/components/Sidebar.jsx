@@ -12,30 +12,10 @@ import useLocalStorageTasks from "../hooks/use-tasks";
 import users from "../data/users";
 
 export default function Sidebar({ currentView, setView, recentTasks, theme }) {
+
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [localRecentTasks, setLocalRecentTasks] = useState(recentTasks || []);
-  const { saveTask } = useLocalStorageTasks("tasks");
+  const [localRecentTasks, setLocalRecentTasks] = useState([]);
   const [localTheme, setLocalTheme] = useState(theme); // Local theme state
-
-  // Sync localRecentTasks with localStorage changes
-  useEffect(() => {
-    const handleStorageChange = () => {
-      const stored = JSON.parse(localStorage.getItem("tasks") || "[]");
-      setLocalRecentTasks(
-        stored
-          .filter((task) => !task.completed && !task.archived)
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          .slice(0, 5)
-      );
-    };
-
-    // Initial load
-    handleStorageChange();
-
-    // Listen for storage changes
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
 
   // Sync local theme with prop
   useEffect(() => {
@@ -65,56 +45,59 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
     window.dispatchEvent(new CustomEvent("addTask"));
   }, []);
 
-  const handleAddOrEditTask = useCallback(
-    (newTask) => {
-      saveTask(newTask, newTask.id);
-      setLocalRecentTasks((prev) => {
-        const exists = prev.find((t) => t.id === newTask.id);
-        if (exists) {
-          return prev.map((t) => (t.id === newTask.id ? newTask : t));
-        }
-        const updatedTasks = [newTask, ...prev.filter((t) => !t.completed)];
-        return updatedTasks
-          .filter((t) => !t.archived)
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          .slice(0, 5);
-      });
-    },
-    [saveTask]
-  );
-
-  // Listen for task updates
+  // Fetch recent tasks from backend
   useEffect(() => {
-    const handleTaskAdded = (event) => {
-      if (event.detail?.task) {
-        handleAddOrEditTask(event.detail.task);
+    async function fetchRecentTasks() {
+      try {
+        const res = await fetch("http://localhost:8080/tasks/recent");
+        if (res.ok) {
+          const data = await res.json();
+          setLocalRecentTasks(data);
+        }
+      } catch (err) {
+        // Optionally handle error
       }
+    }
+    fetchRecentTasks();
+  }, []);
+
+  // Optionally, refetch recent tasks when a new task is added
+  useEffect(() => {
+    const handleTaskAdded = () => {
+      // Refetch recent tasks
+      fetch("http://localhost:8080/tasks/recent")
+        .then((res) => res.ok ? res.json() : [])
+        .then((data) => setLocalRecentTasks(data));
     };
     window.addEventListener("taskAdded", handleTaskAdded);
     return () => window.removeEventListener("taskAdded", handleTaskAdded);
-  }, [handleAddOrEditTask]);
+  }, []);
 
   return (
     <aside
-      key={localTheme} // Force re-render on local theme change
+      key={localTheme}
       className={`fixed top-0 left-0 h-full overflow-y-auto transition-all duration-300 ease-in-out ${
         isCollapsed ? "w-16" : "w-64"
-      } ${localTheme === "light" ? "bg-gradient-to-b from-gray-700 to-gray-800" : "bg-gradient-to-b from-blue-100 to-blue-200"} p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
+      } ${localTheme === "light" ? "bg-gradient-to-b from-gray-700 to-gray-800" : "bg-gradient-to-b from-blue-100 to-blue-200 bg-blue-200/80"} p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
       role="navigation"
       aria-label="Main navigation"
-      style={{ scrollbarWidth: "none" }} // Hide scrollbar for Firefox
+      style={{ scrollbarWidth: "none" }}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         {!isCollapsed && (
-          <div className="text-center">
+          <div className={`w-full text-center border-2 rounded-xl shadow-lg px-4 py-3 mb-2 transition-all duration-300
+            ${localTheme === "light" 
+              ? "bg-gradient-to-r from-yellow-100 via-blue-100 to-blue-200 border-blue-400" 
+              : "bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 border-blue-400"}`}
+          >
             <img src="/BBC Logo.png" alt="Logo" className="mx-auto mb-2 h-15 w-25" />
-            <div className="p-2 rounded-md">
-              <h2 className="text-2xl font-bold text-yellow-600">
-                Issues Dashboard
-              </h2>
-              <p className="text-orange-600 text-sm">Manage your tasks</p>
-            </div>
+            <h2 className={`text-2xl font-bold mb-1 transition-colors duration-300 ${localTheme === "dark" ? "text-yellow-300" : "text-blue-900"}`}>
+              Issues Dashboard
+            </h2>
+            <p className={`text-sm font-medium transition-colors duration-300 ${localTheme === "dark" ? "text-blue-200" : "text-blue-700"}`}>
+              Manage your tasks
+            </p>
           </div>
         )}
         <button
@@ -203,12 +186,13 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
       <div className="mt-4"> {/* Added space with mt-4 */}
         {!isCollapsed && (
           <>
-            <h3 className="font-semibold text-blue-800 mb-3 text-lg flex items-center gap-2">
+            <h3 className={`font-semibold mb-3 text-lg flex items-center gap-2 ${localTheme === "light" ? "text-blue-500" : "text-blue-800"}`}>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5"
                 viewBox="0 0 20 20"
                 fill="currentColor"
+                style={{ color: localTheme === "light" ? "#3B82F6" : "#1e3a8a" }}
               >
                 <path
                   fillRule="evenodd"
@@ -226,9 +210,10 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
                 {localRecentTasks.map((task) => (
                   <div
                     key={task.id}
-                    className="bg-white p-3 rounded-lg shadow-sm border-l-4 border-blue-500 hover:shadow-md transition-shadow cursor-pointer"
+                    className={`p-3 rounded-lg shadow-sm border-l-4 hover:shadow-md transition-shadow cursor-pointer
+                      ${localTheme === "light" ? "bg-blue-50 border-blue-300" : "bg-white bg-opacity-10 border-blue-500"}`}
                     onClick={() => {
-                      console.log("Task clicked:", task.id);
+                      window.dispatchEvent(new CustomEvent("highlightTask", { detail: { taskId: task.id } }));
                     }}
                   >
                     <h4 className="font-medium text-gray-900 text-sm truncate">
@@ -247,7 +232,7 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
                         {task.priority}
                       </span>
                       <span className="text-xs text-gray-500">
-                        {new Date(task.createdAt).toLocaleDateString()}
+                        {new Date(task.created_at).toLocaleDateString()}
                       </span>
                     </div>
                   </div>

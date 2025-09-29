@@ -151,7 +151,17 @@ function App() {
       }
       const updatedTaskSnake = await response.json();
       const updatedTask = toCamelCase(updatedTaskSnake);
-      setTasks(tasks.map((task) => (task.id === taskId ? updatedTask : task)));
+      
+      // Preserve existing subtasks when updating main task
+      setTasks(tasks.map((task) => {
+        if (task.id === taskId) {
+          return {
+            ...updatedTask,
+            subtasks: task.subtasks || [] // Preserve existing subtasks
+          };
+        }
+        return task;
+      }));
       return updatedTask;
     } catch (err) {
       console.error("Failed to update task:", err);
@@ -273,13 +283,13 @@ function App() {
           />
         ) : null}
       </main>
-      <button
+      {/* <button
         type="button"
         onClick={clearTasks}
         className="fixed bottom-4 left-4 bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded shadow-lg z-50"
       >
         Clear All Tasks
-      </button>
+      </button> */}
       <button
         type="button"
         onClick={toggleTheme}

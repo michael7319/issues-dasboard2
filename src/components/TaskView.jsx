@@ -7,6 +7,27 @@ import users from "../data/users";
 const API_BASE = "http://localhost:8080";
 
 export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive }) {
+  const [highlightedTaskId, setHighlightedTaskId] = useState(null);
+
+  // Listen for highlightTask event from Sidebar
+  useEffect(() => {
+    const handleHighlightTask = (e) => {
+      if (e.detail?.taskId) {
+        setHighlightedTaskId(e.detail.taskId);
+        // Optionally scroll to the task
+        setTimeout(() => {
+          const el = document.getElementById(`task-${e.detail.taskId}`);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 100);
+        // Remove highlight after 3 seconds
+        setTimeout(() => {
+          setHighlightedTaskId(null);
+        }, 3000);
+      }
+    };
+    window.addEventListener("highlightTask", handleHighlightTask);
+    return () => window.removeEventListener("highlightTask", handleHighlightTask);
+  }, []);
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,6 +88,8 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
   const createSubtask = async (taskId, subtaskData) => {
     try {
       setLoading(true);
+      console.log("Creating subtask for task:", taskId, "with data:", subtaskData);
+      
       const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -74,7 +97,15 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage += ` - ${errorData.error || errorData.message || 'Unknown error'}`;
+        } catch (parseErr) {
+          // If we can't parse the error response, use the status text
+          errorMessage += ` - ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
       
       const newSubtask = await response.json();
@@ -162,6 +193,26 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
   const handleDeleteTask = async (taskId) => {
     try {
       await onDelete(taskId);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleArchiveTask = async (taskId) => {
+    try {
+      await onArchive(taskId);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handlePinTask = async (taskId) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        const updatedTask = { ...task, pinned: !task.pinned };
+        await onEdit(taskId, updatedTask);
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -283,16 +334,65 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
     }
   };
 
+  // FIXED: Filter function with proper field name handling
   const filterTask = (task) => {
     const matchesPriority =
       priorityFilter === "all" || task.priority === priorityFilter;
+
+    // Main task assignees
+    const mainAssigneeId = task.mainAssigneeId || task.mainAssignee || task.main_assignee_id;
+    const supportingAssignees = task.supportingAssignees || task.supporting_assignees;
+    let supportingIds = [];
+    if (supportingAssignees) {
+      if (typeof supportingAssignees === 'string') {
+        try {
+          supportingIds = JSON.parse(supportingAssignees);
+        } catch (e) {
+          console.warn("Failed to parse supporting assignees:", supportingAssignees);
+        }
+      } else if (Array.isArray(supportingAssignees)) {
+        supportingIds = supportingAssignees;
+      }
+    }
+
+    // Subtask assignees
+    let subtaskHasAssignee = false;
+    if (Array.isArray(task.subtasks)) {
+      for (const sub of task.subtasks) {
+        const subMainId = sub.mainAssigneeId || sub.mainAssignee || sub.main_assignee_id;
+        let subSupporting = sub.supportingAssignees || sub.supporting_assignees;
+        let subSupportingIds = [];
+        if (subSupporting) {
+          if (typeof subSupporting === 'string') {
+            try {
+              subSupportingIds = JSON.parse(subSupporting);
+            } catch (e) {
+              // ignore
+            }
+          } else if (Array.isArray(subSupporting)) {
+            subSupportingIds = subSupporting;
+          }
+        }
+        if (
+          Number(subMainId) === Number(assigneeFilter) ||
+          subSupportingIds.includes(Number(assigneeFilter))
+        ) {
+          subtaskHasAssignee = true;
+          break;
+        }
+      }
+    }
+
     const matchesAssignee =
       assigneeFilter === "all" ||
-      Number(task.main_assignee_id) === Number(assigneeFilter) ||
-      (task.supporting_assignees && JSON.parse(task.supporting_assignees).includes(Number(assigneeFilter)));
+      Number(mainAssigneeId) === Number(assigneeFilter) ||
+      supportingIds.includes(Number(assigneeFilter)) ||
+      subtaskHasAssignee;
+
     const matchesSearch = task.title
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
+
     return matchesPriority && matchesAssignee && matchesSearch;
   };
 
@@ -302,7 +402,16 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
     loose: "gap-[24px]",
   };
 
-  const filteredTasks = tasks.filter(filterTask);
+  // Filter out archived tasks and apply filters, then sort by pinned status
+  const filteredTasks = tasks
+    .filter((t) => !t.archived)
+    .filter(filterTask)
+    .sort((a, b) => {
+      // Pinned tasks first, then by creation date (most recent first)
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
 
   return (
     <div className="relative flex flex-col p-3 gap-4">
@@ -365,7 +474,6 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
 
         {/* Search bar */}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-200">Search:</span>
           <input
             type="text"
             value={searchQuery}
@@ -394,7 +502,8 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
             {filteredTasks.map((task) => (
               <div
                 key={task.id}
-                className="transition-all duration-300 hover:scale-[1.01]"
+                id={`task-${task.id}`}
+                className={`transition-all duration-300 hover:scale-[1.01] ${highlightedTaskId === task.id ? "ring-4 ring-blue-900 ring-offset-2" : ""}`}
               >
                 <TaskCard
                   task={task}
@@ -405,6 +514,8 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
                   onEditSubtask={(subtask) => handleEditSubtask(task, subtask)}
                   onDeleteSubtask={handleDeleteSubtask}
                   onUpdateSubtask={handleUpdateSubtask}
+                  onArchive={handleArchiveTask}
+                  onPin={handlePinTask}
                 />
               </div>
             ))}

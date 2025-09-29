@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"strconv"
@@ -21,6 +22,7 @@ type Task struct {
 	Type                *string   `json:"type" db:"type"`
 	Completed           bool      `json:"completed" db:"completed"`
 	Archived            bool      `json:"archived" db:"archived"`
+	Pinned              bool      `json:"pinned" db:"pinned"`
 	CreatedAt           time.Time `json:"created_at" db:"created_at"`
 	MainAssigneeID      *int      `json:"main_assignee_id" db:"main_assignee_id"`
 	SupportingAssignees *string   `json:"supporting_assignees" db:"supporting_assignees"` // JSON string
@@ -48,6 +50,8 @@ type User struct {
 var db *sqlx.DB
 
 func main() {
+	// ...existing code...
+
 	// Connect to SQL Server
 	connStr := "server=MICHAEL,1433;database=issues_tasks_db;trusted_connection=true;TrustServerCertificate=true;"
 	var err error
@@ -67,6 +71,17 @@ func main() {
 	r := gin.Default()
 	r.Use(cors.Default())
 
+	// GET /tasks/recent - Return 5 most recently created, non-archived, non-completed tasks
+	r.GET("/tasks/recent", func(c *gin.Context) {
+		var tasks []Task
+		err := db.Select(&tasks, `SELECT TOP 5 * FROM Tasks WHERE archived = 0 AND completed = 0 ORDER BY created_at DESC`)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, tasks)
+	})
+
 	// GET /users - return actual users from DB
 	r.GET("/users", func(c *gin.Context) {
 		var users []User
@@ -78,10 +93,10 @@ func main() {
 		c.JSON(http.StatusOK, users)
 	})
 
-	// GET /tasks - Fetch all tasks with subtasks
+	// GET /tasks - Fetch all tasks with subtasks (include archived; frontend filters)
 	r.GET("/tasks", func(c *gin.Context) {
 		var tasks []Task
-		err := db.Select(&tasks, "SELECT * FROM Tasks WHERE archived = 0 ORDER BY created_at DESC")
+		err := db.Select(&tasks, "SELECT * FROM Tasks ORDER BY pinned DESC, created_at DESC")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -122,19 +137,26 @@ func main() {
 			}
 		}
 
-		row := db.QueryRowx(
-			`INSERT INTO Tasks (title, description, priority, type, main_assignee_id, supporting_assignees, schedule, completed, archived)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-			 SELECT CAST(SCOPE_IDENTITY() AS bigint);`,
+		// FIXED: Use OUTPUT clause to get the inserted ID safely
+		var id sql.NullInt64
+		err := db.Get(&id,
+			`INSERT INTO Tasks (title, description, priority, type, main_assignee_id, supporting_assignees, schedule, completed, archived, pinned)
+			 OUTPUT INSERTED.id
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			task.Title, task.Description, task.Priority, task.Type, task.MainAssigneeID, task.SupportingAssignees,
-			task.Schedule, task.Completed, task.Archived,
-		)
-		var id int64
-		if err := row.Scan(&id); err != nil {
+			task.Schedule, task.Completed, task.Archived, task.Pinned)
+
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		task.ID = id
+
+		if !id.Valid {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get inserted ID"})
+			return
+		}
+
+		task.ID = id.Int64
 		c.JSON(http.StatusCreated, task)
 	})
 
@@ -167,10 +189,10 @@ func main() {
 
 		_, err = db.Exec(
 			`UPDATE Tasks SET title = ?, description = ?, priority = ?, type = ?, main_assignee_id = ?,
-			 supporting_assignees = ?, schedule = ?, completed = ?, archived = ?
+			 supporting_assignees = ?, schedule = ?, completed = ?, archived = ?, pinned = ?
 			 WHERE id = ?`,
 			task.Title, task.Description, task.Priority, task.Type, task.MainAssigneeID,
-			task.SupportingAssignees, task.Schedule, task.Completed, task.Archived, id)
+			task.SupportingAssignees, task.Schedule, task.Completed, task.Archived, task.Pinned, id)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -194,7 +216,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 	})
 
-	// POST /tasks/:id/subtasks
+	// POST /tasks/:id/subtasks - FIXED NULL handling
 	r.POST("/tasks/:id/subtasks", func(c *gin.Context) {
 		taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
@@ -221,17 +243,26 @@ func main() {
 			}
 		}
 
-		row := db.QueryRowx(
+		// FIXED: Use OUTPUT clause and sql.NullInt64 to handle NULL safely
+		var id sql.NullInt64
+		err = db.Get(&id,
 			`INSERT INTO Subtasks (task_id, title, completed, main_assignee_id, supporting_assignees, schedule)
-			 VALUES (?, ?, ?, ?, ?, ?);
-			 SELECT CAST(SCOPE_IDENTITY() AS bigint);`,
+			 OUTPUT INSERTED.id
+			 VALUES (?, ?, ?, ?, ?, ?)`,
 			taskID, subtask.Title, subtask.Completed, subtask.MainAssigneeID, subtask.SupportingAssignees, subtask.Schedule)
-		var id int64
-		if err := row.Scan(&id); err != nil {
+
+		if err != nil {
+			log.Println("Error inserting subtask:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		subtask.ID = id
+
+		if !id.Valid {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get inserted subtask ID"})
+			return
+		}
+
+		subtask.ID = id.Int64
 		subtask.TaskID = taskID
 		c.JSON(http.StatusCreated, subtask)
 	})

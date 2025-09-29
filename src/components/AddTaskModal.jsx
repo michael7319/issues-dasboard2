@@ -244,6 +244,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
             onChange={(e) => setTitle(e.target.value)}
             className="p-1 text-sm"
             disabled={isSubmitting}
+            maxLength={200}
           />
         </div>
 
@@ -258,8 +259,9 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
             placeholder="Task description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="p-1 text-sm"
+            className="p-1 text-sm resize-none"
             disabled={isSubmitting}
+            maxLength={2000}
           />
         </div>
 

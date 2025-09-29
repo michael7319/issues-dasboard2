@@ -7,6 +7,27 @@ import users from "../data/users";
 const API_BASE = "http://localhost:8080";
 
 export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive }) {
+  const [highlightedTaskId, setHighlightedTaskId] = useState(null);
+
+  // Listen for highlightTask event from Sidebar
+  useEffect(() => {
+    const handleHighlightTask = (e) => {
+      if (e.detail?.taskId) {
+        setHighlightedTaskId(e.detail.taskId);
+        // Optionally scroll to the task
+        setTimeout(() => {
+          const el = document.getElementById(`task-${e.detail.taskId}`);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 100);
+        // Remove highlight after 3 seconds
+        setTimeout(() => {
+          setHighlightedTaskId(null);
+        }, 3000);
+      }
+    };
+    window.addEventListener("highlightTask", handleHighlightTask);
+    return () => window.removeEventListener("highlightTask", handleHighlightTask);
+  }, []);
   const [selectedTimeframe, setSelectedTimeframe] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -32,6 +53,46 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
     window.addEventListener("addTask", handleAddTaskEvent);
     return () => window.removeEventListener("addTask", handleAddTaskEvent);
   }, []);
+
+  // Helper: safe parse JSON
+  const safeParse = (value, fallback) => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  };
+
+  // Helper: build full backend-compatible subtask payload (snake_case + serialized strings)
+  const buildSubtaskPayload = (subtask, overrides = {}) => {
+    const mainAssigneeId =
+      subtask.mainAssigneeId || subtask.mainAssignee || subtask.main_assignee_id || null;
+
+    let supporting = subtask.supportingAssignees || subtask.supporting_assignees || [];
+    if (typeof supporting === "string") {
+      supporting = safeParse(supporting, []);
+    }
+    if (!Array.isArray(supporting)) supporting = [];
+
+    const schedule =
+      typeof subtask.schedule === "string"
+        ? subtask.schedule
+        : subtask.schedule
+        ? JSON.stringify(subtask.schedule)
+        : null;
+
+    return {
+      title: subtask.title || "",
+      completed:
+        typeof overrides.completed === "boolean" ? overrides.completed : !!subtask.completed,
+      main_assignee_id:
+        mainAssigneeId === null || mainAssigneeId === undefined
+          ? null
+          : Number(mainAssigneeId) || null,
+      supporting_assignees: JSON.stringify(supporting.map(Number)),
+      schedule,
+    };
+  };
 
   // API call to create a subtask
   const createSubtask = async (taskId, subtaskData) => {
@@ -127,12 +188,10 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
 
   const handleArchiveTask = async (taskId) => {
     try {
-      const task = tasks.find(t => t.id === taskId);
-      if (!task) return;
-      const payload = { ...task, archived: !task.archived };
-      await onEdit(taskId, payload);
-      setTasks(prev => prev.map(t => (t.id === taskId ? { ...t, archived: payload.archived } : t)));
-    } catch (err) {}
+      await onArchive(taskId);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const handleMarkComplete = async (taskId, completed) => {
@@ -178,7 +237,8 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
 
   const handleSubtaskUpdate = async (taskId, subtask) => {
     try {
-      const updatedSubtask = await updateSubtask(taskId, subtask.id, subtask);
+      const payload = buildSubtaskPayload(subtask);
+      const updatedSubtask = await updateSubtask(taskId, subtask.id, payload);
       setTasks(prev =>
         prev.map(t =>
           t.id === taskId
@@ -213,7 +273,8 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
       
       if (subtask) {
         const updatedSubtaskData = { ...subtask, ...updates };
-        const updatedSubtask = await updateSubtask(taskId, subtaskId, updatedSubtaskData);
+        const payload = buildSubtaskPayload(updatedSubtaskData, updates);
+        const updatedSubtask = await updateSubtask(taskId, subtaskId, payload);
         setTasks(prev =>
           prev.map(t =>
             t.id === taskId
@@ -238,8 +299,12 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
   };
 
   const timeframes = ["all", "daily", "weekly", "project", "custom"];
+  
+  // Filter out archived tasks first, then group by type
+  const nonArchivedTasks = tasks.filter(task => !task.archived);
   const groups = { daily: [], weekly: [], project: [], custom: [] };
-  for (const task of tasks) {
+  
+  for (const task of nonArchivedTasks) {
     if (groups[task.type]) groups[task.type].push(task);
     else groups.custom.push(task);
   }
@@ -280,41 +345,61 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
   const filterTask = (task) => {
     const matchesPriority =
       priorityFilter === "all" || task.priority === priorityFilter;
-    
-    // Fixed: Use correct field names from backend
-    const matchesAssignee = assigneeFilter === "all" || 
-      Number(task.mainAssigneeId) === Number(assigneeFilter) || 
-      Number(task.main_assignee_id) === Number(assigneeFilter) || // Handle both possible field names
-      (task.supportingAssignees && (() => {
-        let supporting = [];
-        if (typeof task.supportingAssignees === 'string') {
-          try {
-            supporting = JSON.parse(task.supportingAssignees);
-          } catch (e) {
-            console.warn("Failed to parse supporting_assignees:", task.supportingAssignees);
-          }
-        } else if (Array.isArray(task.supportingAssignees)) {
-          supporting = task.supportingAssignees;
+
+    // Main task assignees
+    const mainAssigneeId = task.mainAssigneeId || task.mainAssignee || task.main_assignee_id;
+    let supportingIds = [];
+    let supportingAssignees = task.supportingAssignees || task.supporting_assignees;
+    if (supportingAssignees) {
+      if (typeof supportingAssignees === 'string') {
+        try {
+          supportingIds = JSON.parse(supportingAssignees);
+        } catch (e) {
+          // ignore
         }
-        return supporting.includes(Number(assigneeFilter));
-      })()) || 
-      (task.supporting_assignees && (() => {
-        let supporting = [];
-        if (typeof task.supporting_assignees === 'string') {
-          try {
-            supporting = JSON.parse(task.supporting_assignees);
-          } catch (e) {
-            console.warn("Failed to parse supporting_assignees:", task.supporting_assignees);
+      } else if (Array.isArray(supportingAssignees)) {
+        supportingIds = supportingAssignees;
+      }
+    }
+
+    // Subtask assignees
+    let subtaskHasAssignee = false;
+    if (Array.isArray(task.subtasks)) {
+      for (const sub of task.subtasks) {
+        const subMainId = sub.mainAssigneeId || sub.mainAssignee || sub.main_assignee_id;
+        let subSupporting = sub.supportingAssignees || sub.supporting_assignees;
+        let subSupportingIds = [];
+        if (subSupporting) {
+          if (typeof subSupporting === 'string') {
+            try {
+              subSupportingIds = JSON.parse(subSupporting);
+            } catch (e) {
+              // ignore
+            }
+          } else if (Array.isArray(subSupporting)) {
+            subSupportingIds = subSupporting;
           }
-        } else if (Array.isArray(task.supporting_assignees)) {
-          supporting = task.supporting_assignees;
         }
-        return supporting.includes(Number(assigneeFilter));
-      })());
+        if (
+          Number(subMainId) === Number(assigneeFilter) ||
+          subSupportingIds.includes(Number(assigneeFilter))
+        ) {
+          subtaskHasAssignee = true;
+          break;
+        }
+      }
+    }
+
+    const matchesAssignee =
+      assigneeFilter === "all" ||
+      Number(mainAssigneeId) === Number(assigneeFilter) ||
+      supportingIds.includes(Number(assigneeFilter)) ||
+      subtaskHasAssignee;
 
     const matchesSearch = task.title
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
+
     return matchesPriority && matchesAssignee && matchesSearch;
   };
 
@@ -440,7 +525,8 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
                 {filtered.map((task) => (
                   <div
                     key={task.id}
-                    className="transition-all duration-300 hover:scale-[1.01]"
+                    id={`task-${task.id}`}
+                    className={`transition-all duration-300 hover:scale-[1.01] ${highlightedTaskId === task.id ? "ring-4 ring-blue-900 ring-offset-2" : ""}`}
                   >
                     <TaskCard
                       task={task}

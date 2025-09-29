@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
 const WEEKDAYS = [
@@ -135,11 +136,21 @@ export default function AddSubtaskModal({
         };
       }
     } else if (scheduleMode === "due") {
-      return {
+      const schedule = {
         mode: "due",
-        dueAt: dueAt || null,
-        dueWeekday: dueWeekday !== null ? Number(dueWeekday) : null,
       };
+      
+      // Only add dueAt if it's a valid date string
+      if (dueAt && dueAt.trim()) {
+        schedule.dueAt = dueAt.trim();
+      }
+      
+      // Only add dueWeekday if it's a valid number
+      if (dueWeekday !== null && !isNaN(Number(dueWeekday))) {
+        schedule.dueWeekday = Number(dueWeekday);
+      }
+      
+      return schedule;
     }
 
     return null;
@@ -151,22 +162,36 @@ export default function AddSubtaskModal({
       return;
     }
 
+    // Validate main assignee ID
+    const mainAssigneeNum = Number(mainAssigneeId);
+    if (isNaN(mainAssigneeNum) || mainAssigneeNum <= 0) {
+      setError("Please select a valid main assignee");
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
     try {
       const schedule = buildSchedule();
 
+      // Validate and clean supporting assignees
+      const cleanSupportingAssignees = supportingAssignees
+        .map(Number)
+        .filter(id => !isNaN(id) && id > 0 && id !== mainAssigneeNum); // Remove duplicates of main assignee
+
       // Structure data to match backend expectations
       const subtaskData = {
         // Use the ID if editing, let backend generate if new
         ...(editingSubtask?.id && { id: editingSubtask.id }),
-        title: title.trim(),
-        completed,
-        main_assignee_id: Number(mainAssigneeId), // Backend expects this field name
-        supporting_assignees: JSON.stringify(supportingAssignees.map(Number)), // Store as JSON string
-        schedule: schedule ? JSON.stringify(schedule) : null, // Store as JSON string
+        title: title.trim(), // Ensure max length
+        completed: Boolean(completed),
+        main_assignee_id: mainAssigneeNum,
+        supporting_assignees: JSON.stringify(cleanSupportingAssignees),
+        schedule: schedule ? JSON.stringify(schedule) : null,
       };
+
+      console.log("Submitting subtask data:", subtaskData); // Debug log
 
       if (isEditMode) {
         await onUpdate(parentTask.id, subtaskData);
@@ -177,7 +202,7 @@ export default function AddSubtaskModal({
       onClose();
     } catch (err) {
       console.error("Error submitting subtask:", err);
-      setError(err.message || "Failed to save subtask");
+      setError(err.message || "Failed to save subtask. Please check your input and try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -201,19 +226,21 @@ export default function AddSubtaskModal({
           </div>
         )}
 
-        {/* Title */}
+        {/* Description */}
         <div className="mb-3 text-sm">
           <Label htmlFor="title" className="mb-1 block">
-            Title *
+            Description *
           </Label>
-          <Input
+          <Textarea
             id="title"
-            placeholder="Enter subtask title"
+            rows={3}
+            placeholder="Enter subtask description"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="p-1 text-sm"
+            className="p-1 text-sm resize-none"
             disabled={isSubmitting}
             required
+            maxLength={1000}
           />
         </div>
 

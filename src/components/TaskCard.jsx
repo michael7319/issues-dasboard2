@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import users from "../data/users";
-import { Pencil, Trash2, Plus, Archive } from "lucide-react";
+import { Pencil, Trash2, Plus, Archive, Pin } from "lucide-react";
 
 const priorityBorderColors = {
   High: "border-red-500 text-red-600",
@@ -195,7 +195,7 @@ function SubtaskCard({
 
   return (
     <div
-      className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md cursor-pointer"
+      className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md cursor-pointer w-full max-w-[248px]"
       onMouseEnter={() => setHoveredSubtaskId(sub.id)}
       onMouseLeave={() => setHoveredSubtaskId(null)}
       onClick={handleEditSubtask}
@@ -219,17 +219,18 @@ function SubtaskCard({
       </div>
 
       <div className="pt-4">
-        <div className="flex items-center gap-1 pr-8">
+        <div className="flex items-start gap-1 pr-3">
           <input
             type="checkbox"
             checked={sub.completed}
             onChange={handleSubtaskToggle}
             onClick={handleSubtaskToggle}
-            className="w-3 h-3 accent-green-500 cursor-pointer"
+            className="w-3 h-3 accent-green-500 cursor-pointer mt-0.5 flex-shrink-0"
           />
           <span 
-            className={`cursor-pointer ${sub.completed ? "line-through text-gray-400" : ""}`}
+            className={`cursor-pointer break-words whitespace-pre-wrap overflow-hidden ${sub.completed ? "line-through text-gray-400" : ""}`}
             onClick={handleSubtaskToggle}
+            style={{ wordBreak: 'break-word', maxWidth: 'calc(100% - 12px)' }}
           >
             {sub.title}
           </span>
@@ -262,6 +263,7 @@ export default function TaskCard({
   onDeleteSubtask,
   onUpdateSubtask,
   onArchive,
+  onPin,
 }) {
   const [isCompleted, setIsCompleted] = useState(task.completed || false);
   const [isHovered, setIsHovered] = useState(false);
@@ -318,6 +320,12 @@ export default function TaskCard({
     onArchive?.(task.id);
   };
 
+  const handlePinClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onPin?.(task.id);
+  };
+
   const getUserInitials = (user) => {
     if (!user) return "";
     const parts = user.fullName.trim().split(" ");
@@ -352,9 +360,14 @@ export default function TaskCard({
       >
         {/* Top Buttons Row */}
         <div className="absolute flex justify-between items-center top-1 left-1 right-1 px-1 z-30">
-          <button type="button" title={task.archived ? "Unarchive" : "Archive"} onClick={handleArchiveClick}>
-            <Archive size={12} className="text-gray-400 hover:text-yellow-400" />
-          </button>
+          <div className="flex gap-1">
+            <button type="button" title={task.pinned ? "Unpin" : "Pin"} onClick={handlePinClick}>
+              <Pin size={12} className={`${task.pinned ? "text-red-500" : "text-gray-400 hover:text-red-400"}`} />
+            </button>
+            <button type="button" title={task.archived ? "Unarchive" : "Archive"} onClick={handleArchiveClick}>
+              <Archive size={12} className="text-gray-400 hover:text-yellow-400" />
+            </button>
+          </div>
           <div className="flex gap-1">
             <button type="button" onClick={handleEditClick} title="Edit">
               <Pencil size={12} className="text-gray-400 hover:text-blue-400" />
@@ -367,8 +380,8 @@ export default function TaskCard({
 
         {/* Title & Description */}
         <div className="pt-3">
-          <h3 className="text-[11px] font-semibold">{task.title}</h3>
-          <p className="text-[10px] text-gray-300">{task.description}</p>
+          <h3 className="text-[11px] font-semibold break-words">{task.title}</h3>
+          <p className="text-[10px] text-gray-300 break-words whitespace-pre-wrap">{task.description}</p>
         </div>
 
         {/* Assignees */}

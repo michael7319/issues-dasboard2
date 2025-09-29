@@ -77,7 +77,8 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
       schedule,
       completed:
         typeof overrides.completed === "boolean" ? overrides.completed : !!task.completed,
-      archived: !!task.archived,
+      archived: typeof overrides.archived === "boolean" ? overrides.archived : !!task.archived,
+        pinned: typeof overrides.pinned === "boolean" ? overrides.pinned : !!task.pinned,
     };
   };
 
@@ -240,15 +241,19 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
     try {
       if (editingTask) {
         // Update existing task
-        const updatedTask = await updateTask(editingTask.id, newTask);
+        const payload = buildTaskPayload({ ...editingTask, ...newTask });
+        const updatedTask = await updateTask(editingTask.id, payload);
         setTasks(prev => prev.map(t => t.id === editingTask.id ? updatedTask : t));
       } else {
         // Create new task
-        const createdTask = await createTask(newTask);
+        const payload = buildTaskPayload(newTask);
+        const createdTask = await createTask(payload);
         setTasks(prev => [createdTask, ...prev]);
+        
+        // Dispatch event for sidebar
+        window.dispatchEvent(new CustomEvent("taskAdded", { detail: { task: createdTask } }));
       }
       
-      window.dispatchEvent(new CustomEvent("taskAdded", { detail: { task: newTask } }));
       setEditingTask(null);
       setIsModalOpen(false);
     } catch (err) {
@@ -266,7 +271,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
       const updated = await updateTask(taskId, payload);
       setTasks(prev => prev.map(t => (t.id === taskId ? updated : t)));
     } catch (err) {
-      // error handled upstream
+      setError(err.message);
     }
   };
 
@@ -284,7 +289,8 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
   const handleSubtaskAdd = async (taskId, subtask) => {
     try {
-      const newSubtask = await createSubtask(taskId, subtask);
+      const payload = buildSubtaskPayload(subtask);
+      const newSubtask = await createSubtask(taskId, payload);
       setTasks(prev =>
         prev.map(t =>
           t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), newSubtask] } : t
@@ -302,7 +308,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
       setTasks(prev =>
         prev.map(t =>
           t.id === taskId
-            ? { ...t, subtasks: t.subtasks.map(s => s.id === subtask.id ? updatedSubtask : s) }
+            ? { ...t, subtasks: (t.subtasks || []).map(s => s.id === subtask.id ? updatedSubtask : s) }
             : t
         )
       );
@@ -317,7 +323,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
       setTasks(prev =>
         prev.map(t =>
           t.id === taskId
-            ? { ...t, subtasks: t.subtasks.filter(s => s.id !== subtaskId) }
+            ? { ...t, subtasks: (t.subtasks || []).filter(s => s.id !== subtaskId) }
             : t
         )
       );
@@ -340,7 +346,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
             t.id === taskId
               ? {
                   ...t,
-                  subtasks: t.subtasks.map(s =>
+                  subtasks: (t.subtasks || []).map(s =>
                     s.id === subtaskId ? updatedSubtask : s
                   ),
                 }
@@ -372,7 +378,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
         setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
       }
     } catch (err) {
-      // Error already handled in API functions
+      setError(err.message);
     }
   };
 
@@ -540,6 +546,12 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
       const activeContainer = getTaskContainer(activeTaskNow);
       const overTask = tasks.find(t => t.id === overId);
       const overContainer = getTaskContainer(overTask);
+      const todoTasks = tasks.filter(
+        (t) => !t.archived && (!t.completed || (t.subtasks && t.subtasks.some((s) => !s.completed)))
+      );
+      const doneTasks = tasks.filter(
+        (t) => !t.archived && t.completed && (!t.subtasks || t.subtasks.every((s) => s.completed))
+      );
 
       if (activeContainer === overContainer) {
         // Same container reorder - update local state
@@ -599,10 +611,10 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
   };
 
   const todoTasks = tasks.filter(
-    (t) => !t.completed || (t.subtasks && t.subtasks.some((s) => !s.completed))
+    (t) => !t.archived && (!t.completed || (t.subtasks && t.subtasks.some((s) => !s.completed)))
   );
   const doneTasks = tasks.filter(
-    (t) => t.completed && (!t.subtasks || t.subtasks.every((s) => s.completed))
+    (t) => !t.archived && t.completed && (!t.subtasks || t.subtasks.every((s) => s.completed))
   );
 
   if (error) {
