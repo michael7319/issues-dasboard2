@@ -106,7 +106,12 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       setDueTime(sch.dueTime || "");
       setDueWeekday(typeof sch.dueWeekday === "number" ? sch.dueWeekday : 1);
 
-      if (sch.dueAt) {
+      // Restore day selector for daily/repeat tasks
+      if (sch.repeatDays) {
+        setDueDateAbs(String(sch.repeatDays));
+      } else if (sch.expiresInDays) {
+        setDueDateAbs(String(sch.expiresInDays));
+      } else if (sch.dueAt) {
         setDueDateAbs(sch.dueAt.split("T")[0]); // ensure YYYY-MM-DD only
       } else {
         setDueDateAbs("");
@@ -154,20 +159,28 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       };
     }
 
-    if (type === "daily" || type === "weekly") {
-      const sch = { mode: "due", reset: resetPolicy, dueTime: dueTime || "" };
-      if (type === "weekly") {
-        sch.dueWeekday =
-          typeof dueWeekday === "number"
-            ? dueWeekday
-            : parseInt(dueWeekday, 10) || 1;
+    // N-day repeat logic
+    if (isRecurring && dueDateAbs) {
+      // If time is set, repeat every N days at that time
+      if (dueTime) {
+        return {
+          mode: "due",
+          reset: `every_${dueDateAbs}_days`,
+          repeatDays: Number(dueDateAbs),
+          dueTime,
+        };
+      } else {
+        // Only day picked, expires after N days
+        return {
+          mode: "due",
+          reset: "none",
+          expiresInDays: Number(dueDateAbs),
+        };
       }
-      if (!sch.dueTime) return { mode: "none", reset: resetPolicy };
-      return sch;
     }
 
     // Project / Custom → only date
-    if (dueDateAbs) {
+    if (!isRecurring && dueDateAbs) {
       return {
         mode: "due",
         reset: "none",
@@ -417,23 +430,30 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
           )}
 
           {/* Daily/Weekly due time */}
-          {isRecurring && (
-            <div
-              className={`grid grid-cols-2 gap-2 ${
-                showDueTimeRecurring ? "" : "opacity-50"
-              }`}
-            >
-              {type === "weekly" && (
+          {isRecurring && mode === "due" && (
+            <div className={`grid grid-cols-2 gap-2 ${showDueTimeRecurring ? "" : "opacity-50"}`}>
+              {type === "weekly" ? (
                 <select
                   disabled={!showDueTimeRecurring || isSubmitting}
-                  value={dueWeekday}
-                  onChange={(e) => setDueWeekday(parseInt(e.target.value, 10))}
+                  value={dueDateAbs}
+                  onChange={(e) => setDueDateAbs(e.target.value)}
                   className="p-1 text-sm border rounded text-black"
                 >
-                  {WEEKDAYS.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
-                    </option>
+                  <option value="">Select weeks</option>
+                  {[1,2,3,4].map((w) => (
+                    <option key={w} value={w}>{w} week{w > 1 ? 's' : ''}</option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  disabled={!showDueTimeRecurring || isSubmitting}
+                  value={dueDateAbs}
+                  onChange={(e) => setDueDateAbs(e.target.value)}
+                  className="p-1 text-sm border rounded text-black"
+                >
+                  <option value="">Select days</option>
+                  {[1,2,3,4,5,6].map((d) => (
+                    <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
                   ))}
                 </select>
               )}
@@ -448,10 +468,8 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
           )}
 
           {/* Project/Custom absolute due (date only) */}
-          {!isRecurring && (
-            <div
-              className={`grid grid-cols-1 ${showAbsDue ? "" : "opacity-50"}`}
-            >
+          {!isRecurring && !showCountdownInputs && (
+            <div className={`grid grid-cols-1 ${showAbsDue ? "" : "opacity-50"}`}>
               <Input
                 type="date"
                 disabled={!showAbsDue || isSubmitting}

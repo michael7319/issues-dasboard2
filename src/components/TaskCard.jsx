@@ -100,29 +100,44 @@ const useCountdown = (item) => {
 const getDueDisplay = (item, countdownValue) => {
   if (!item) return "--:--";
 
+  // Countdown mode
   if (item.schedule?.mode === "countdown") {
     return countdownValue || "--:--";
-  } else if (item.schedule?.mode === "due") {
-    if (item.schedule.dueAt) {
-      const formatted = formatDate(item.schedule.dueAt);
-      if (!formatted) return "TIME UP";
-      const dueDate = new Date(item.schedule.dueAt);
-      if (dueDate < new Date()) return "TIME UP";
-      return formatted;
-    } else if (item.type === "daily" && item.schedule.dueTime) {
-      return `Daily @ ${item.schedule.dueTime}`;
-    } else if (item.type === "weekly" && item.schedule.dueTime) {
-      const weekday = WEEKDAYS[item.schedule.dueWeekday ?? 0];
-      return `Weekly (${weekday}) @ ${item.schedule.dueTime}`;
-    }
   }
 
-  if (item.dueDate) {
-    const formatted = formatDate(item.dueDate);
+  // One-time due date
+  if (item.schedule?.dueAt) {
+    const formatted = formatDate(item.schedule.dueAt);
     if (!formatted) return "TIME UP";
-    const dueDate = new Date(item.dueDate);
+    const dueDate = new Date(item.schedule.dueAt);
     if (dueDate < new Date()) return "TIME UP";
     return formatted;
+  }
+
+
+  // N-day repeat logic
+  if (item.schedule?.repeatDays && item.schedule?.dueTime) {
+    const now = new Date();
+    // Find last reset date
+    const created = new Date(item.createdAt || item.created_at || now);
+    const daysSince = Math.floor((now - created) / (1000 * 60 * 60 * 24));
+    const cycleDay = daysSince % item.schedule.repeatDays;
+    // Calculate next due time for this cycle
+    const [hour, minute] = item.schedule.dueTime.split(":").map(Number);
+    const dueToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute);
+    if (cycleDay === 0 && now > dueToday) {
+      return "TIME UP";
+    }
+    return `Every ${item.schedule.repeatDays} days @ ${item.schedule.dueTime}`;
+  }
+  // Only day picked, expires after N days
+  if (item.schedule?.expiresInDays) {
+    const created = new Date(item.createdAt || item.created_at || new Date());
+    const expires = new Date(created.getTime() + item.schedule.expiresInDays * 24 * 60 * 60 * 1000);
+    if (new Date() > expires) {
+      return "TIME UP";
+    }
+    return `Expires in ${item.schedule.expiresInDays} day${item.schedule.expiresInDays > 1 ? "s" : ""}`;
   }
 
   return "--:--";

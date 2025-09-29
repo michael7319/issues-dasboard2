@@ -375,35 +375,18 @@ export default function AddSubtaskModal({
 
           {/* Due Date + Weekly Repeat */}
           {showDueInputs && (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label htmlFor="dueAt" className="text-xs block mb-1">
-                  Due Date
-                </Label>
-                <Input
-                  id="dueAt"
-                  type="date"
-                  value={dueAt}
-                  onChange={(e) => setDueAt(e.target.value)}
-                  disabled={isSubmitting}
-                  className="p-1 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs block mb-1">Weekly Repeat</Label>
-                <select
-                  value={dueWeekday}
-                  onChange={(e) => setDueWeekday(parseInt(e.target.value, 10))}
-                  disabled={isSubmitting}
-                  className="w-full p-1 border rounded text-sm text-black"
-                >
-                  {WEEKDAYS.map((day, idx) => (
-                    <option key={idx} value={idx}>
-                      {day}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <Label htmlFor="dueAt" className="text-xs block mb-1">
+                Due Date
+              </Label>
+              <Input
+                id="dueAt"
+                type="date"
+                value={dueAt}
+                onChange={(e) => setDueAt(e.target.value)}
+                disabled={isSubmitting}
+                className="p-1 text-sm"
+              />
             </div>
           )}
         </div>
