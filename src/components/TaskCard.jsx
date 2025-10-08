@@ -306,6 +306,12 @@ export default function TaskCard({
   const handleToggle = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Don't allow toggling for archived tasks
+    if (task.archived) {
+      return;
+    }
+    
     const newStatus = !isCompleted;
     setIsCompleted(newStatus);
     onComplete(task.id, newStatus);

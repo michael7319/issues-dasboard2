@@ -241,6 +241,9 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
               : t
           )
         );
+
+        // Dispatch event to notify sidebar to refresh recent tasks
+        window.dispatchEvent(new CustomEvent("taskUpdated"));
       }
     } catch (err) {
       // Error already handled in API function

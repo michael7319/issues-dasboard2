@@ -91,7 +91,7 @@ func main() {
 	r.GET("/tasks/recent", func(c *gin.Context) {
 		ctx := c.Request.Context()
 		tasksColl := db.Collection("tasks")
-		filter := bson.M{"archived": false, "completed": false}
+		filter := bson.M{"archived": false} // Only filter out archived tasks, show both completed and incomplete
 		op := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(5)
 		cur, err := tasksColl.Find(ctx, filter, op)
 		if err != nil {
@@ -216,6 +216,21 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated task"})
 			return
 		}
+
+		// Fetch subtasks for the updated task
+		subtasksColl := db.Collection("subtasks")
+		subCur, err := subtasksColl.Find(ctx, bson.M{"task_id": updated.ID})
+		if err != nil {
+			log.Println("subtasks Find error:", err)
+		} else {
+			var subtasks []Subtask
+			if err := subCur.All(ctx, &subtasks); err != nil {
+				log.Println("subtasks cursor.All error:", err)
+			} else {
+				updated.Subtasks = subtasks
+			}
+		}
+
 		c.JSON(http.StatusOK, updated)
 	})
 

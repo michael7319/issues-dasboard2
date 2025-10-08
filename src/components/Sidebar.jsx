@@ -11,10 +11,10 @@ import {
 import useLocalStorageTasks from "../hooks/use-tasks";
 import users from "../data/users";
 
-export default function Sidebar({ currentView, setView, recentTasks, theme }) {
+export default function Sidebar({ currentView, setView, theme }) {
 
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [localRecentTasks, setLocalRecentTasks] = useState([]);
+  const [recentTasks, setRecentTasks] = useState([]);
   const [localTheme, setLocalTheme] = useState(theme); // Local theme state
 
   // Sync local theme with prop
@@ -45,51 +45,45 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
     window.dispatchEvent(new CustomEvent("addTask"));
   }, []);
 
-  // Fetch recent tasks from backend
-  useEffect(() => {
-    async function fetchRecentTasks() {
-      try {
-        const res = await fetch("http://localhost:8080/tasks/recent");
-        if (res.ok) {
-          const data = await res.json();
-          // Ensure we always store an array (guard against unexpected null/object responses)
-          setLocalRecentTasks(Array.isArray(data) ? data : []);
-        }
-      } catch (err) {
-        // Optionally handle error
+  // Fetch recent tasks from backend - simplified version
+  const fetchRecentTasks = useCallback(async () => {
+    try {
+      const res = await fetch("http://localhost:8080/tasks/recent");
+      if (res.ok) {
+        const data = await res.json();
+        setRecentTasks(Array.isArray(data) ? data : []);
+        console.log("Fetched recent tasks:", data);
       }
+    } catch (err) {
+      console.error("Failed to fetch recent tasks:", err);
+      setRecentTasks([]);
     }
+  }, []);
+
+  // Initial fetch on mount
+  useEffect(() => {
     fetchRecentTasks();
-  }, []);
+  }, [fetchRecentTasks]);
 
-  // Keep localRecentTasks in sync with prop `recentTasks` when provided by App
+  // Refetch when tasks are added or updated
   useEffect(() => {
-    if (recentTasks && Array.isArray(recentTasks)) {
-      // backend fetch is still a fallback, but prefer the prop when available
-      setLocalRecentTasks(recentTasks);
-    }
-  }, [recentTasks]);
-
-  // Optionally, refetch recent tasks when a new task is added
-  useEffect(() => {
-    const handleTaskAdded = () => {
-      // Refetch recent tasks
-      fetch("http://localhost:8080/tasks/recent")
-        .then(async (res) => {
-          if (!res.ok) return [];
-          try {
-            const d = await res.json();
-            return Array.isArray(d) ? d : [];
-          } catch (e) {
-            return [];
-          }
-        })
-        .then((data) => setLocalRecentTasks(data))
-        .catch(() => setLocalRecentTasks([]));
+    const handleTaskChange = () => {
+      // Add a small delay to ensure backend has processed the change
+      setTimeout(fetchRecentTasks, 200);
     };
-    window.addEventListener("taskAdded", handleTaskAdded);
-    return () => window.removeEventListener("taskAdded", handleTaskAdded);
-  }, []);
+
+    window.addEventListener("taskAdded", handleTaskChange);
+    window.addEventListener("taskUpdated", handleTaskChange);
+    window.addEventListener("taskDeleted", handleTaskChange);
+    window.addEventListener("taskArchived", handleTaskChange);
+    
+    return () => {
+      window.removeEventListener("taskAdded", handleTaskChange);
+      window.removeEventListener("taskUpdated", handleTaskChange);
+      window.removeEventListener("taskDeleted", handleTaskChange);
+      window.removeEventListener("taskArchived", handleTaskChange);
+    };
+  }, [fetchRecentTasks]);
 
   return (
     <aside
@@ -220,12 +214,12 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
               </svg>
               Recently Added
             </h3>
-            {localRecentTasks.length > 0 ? (
+            {recentTasks.length > 0 ? (
               <div
                 className="space-y-2 max-h-64 overflow-y-auto pr-2"
                 style={{ scrollbarWidth: "none" }} // Hide scrollbar for Firefox
               >
-                {localRecentTasks.map((task) => (
+                {recentTasks.map((task) => (
                   <div
                     key={task.id}
                     className={`p-3 rounded-lg shadow-sm border-l-4 hover:shadow-md transition-shadow cursor-pointer

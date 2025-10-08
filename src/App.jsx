@@ -129,6 +129,10 @@ function App() {
       const newTaskSnake = await response.json();
       const newTask = toCamelCase(newTaskSnake);
       setTasks(prev => [newTask, ...prev]);
+      
+      // Dispatch event to notify sidebar to refresh recent tasks
+      window.dispatchEvent(new CustomEvent("taskAdded"));
+      
       return newTask;
     } catch (err) {
       console.error("Failed to create task:", err);
@@ -162,6 +166,10 @@ function App() {
         }
         return task;
       }));
+
+      // Dispatch event to notify sidebar to refresh recent tasks
+      window.dispatchEvent(new CustomEvent("taskUpdated"));
+      
       return updatedTask;
     } catch (err) {
       console.error("Failed to update task:", err);
@@ -178,6 +186,9 @@ function App() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       setTasks(tasks.filter((task) => task.id !== taskId));
+      
+      // Dispatch event to notify sidebar to refresh recent tasks
+      window.dispatchEvent(new CustomEvent("taskDeleted"));
     } catch (err) {
       console.error("Failed to delete task:", err);
       setError(err.message);
@@ -202,17 +213,14 @@ function App() {
       const dataSnake = await response.json();
       const data = toCamelCase(dataSnake);
       setTasks(tasks.map(t => t.id === taskId ? data : t));
+      
+      // Dispatch event to notify sidebar to refresh recent tasks
+      window.dispatchEvent(new CustomEvent("taskArchived"));
     } catch (err) {
       console.error("Failed to archive task:", err);
       setError(err.message);
     }
   };
-
-  // Get recent tasks (last 5, not archived, sorted by created_at)
-  const recentTasks = tasks
-    .filter((task) => !task.archived)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 5);
 
   if (loading) {
     return (
@@ -241,7 +249,7 @@ function App() {
 
   return (
     <div className={`flex min-h-screen ${theme === "light" ? "bg-white text-gray-800" : "bg-gray-950 text-gray-200"}`}>
-      <Sidebar currentView={view} setView={setView} recentTasks={recentTasks} theme={theme} />
+      <Sidebar currentView={view} setView={setView} theme={theme} />
       <main
         className={`flex-grow p-6 overflow-y-auto transition-all duration-300 ${isSidebarCollapsed ? "ml-16" : "ml-64"} ${theme === "light" ? "bg-gray-100" : "bg-gray-900"}`}
       >

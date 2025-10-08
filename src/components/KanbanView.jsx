@@ -353,6 +353,9 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
               : t
           )
         );
+
+        // Dispatch event to notify sidebar to refresh recent tasks
+        window.dispatchEvent(new CustomEvent("taskUpdated"));
       }
     } catch (err) {
       // Error already handled in API function
