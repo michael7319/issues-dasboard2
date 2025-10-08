@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import FilterDropdown from "./ui/FilterDropdown";
 import TaskCard from "./TaskCard";
 import AddTaskModal from "./AddTaskModal";
 import AddSubtaskModal from "./AddSubtaskModal";
@@ -29,8 +30,11 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
     return () => window.removeEventListener("highlightTask", handleHighlightTask);
   }, []);
   const [selectedTimeframe, setSelectedTimeframe] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState([]);
+  const [assigneeFilter, setAssigneeFilter] = useState([]);
+  const [statusFilter, setStatusFilter] = useState([]);
+  const [showFilter, setShowFilter] = useState(false);
+  const filterButtonRef = useRef(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
 
@@ -92,56 +96,6 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
       supporting_assignees: JSON.stringify(supporting.map(Number)),
       schedule,
     };
-  };
-
-  // API call to create a subtask
-  const createSubtask = async (taskId, subtaskData) => {
-    try {
-      setLoading(true);
-      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subtaskData)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const newSubtask = await response.json();
-      return newSubtask;
-    } catch (err) {
-      console.error("Error creating subtask:", err);
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // API call to update a subtask
-  const updateSubtask = async (taskId, subtaskId, subtaskData) => {
-    try {
-      setLoading(true);
-      const response = await fetch(`${API_BASE}/tasks/${taskId}/subtasks/${subtaskId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subtaskData)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const updatedSubtask = await response.json();
-      return updatedSubtask;
-    } catch (err) {
-      console.error("Error updating subtask:", err);
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
   };
 
   // API call to delete a subtask
@@ -329,22 +283,25 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
         : "border border-gray-700 text-gray-300 hover:border-blue-500 hover:text-white"
     }`;
 
-  const handleUnifiedFilterChange = (value) => {
-    if (value === "all") {
-      setPriorityFilter("all");
-      setAssigneeFilter("all");
-    } else if (value.startsWith("priority:")) {
-      setPriorityFilter(value.split(":")[1]);
-      setAssigneeFilter("all");
-    } else if (value.startsWith("assignee:")) {
-      setAssigneeFilter(value.split(":")[1]);
-      setPriorityFilter("all");
-    }
+  const togglePriority = (p) => {
+    setPriorityFilter(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
+  };
+  const toggleAssignee = (id) => {
+    setAssigneeFilter(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const toggleStatus = (s) => {
+    setStatusFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+  };
+
+  const clearFilters = () => {
+    setPriorityFilter([]);
+    setAssigneeFilter([]);
+    setStatusFilter([]);
   };
 
   const filterTask = (task) => {
     const matchesPriority =
-      priorityFilter === "all" || task.priority === priorityFilter;
+      priorityFilter.length === 0 || (task.priority && priorityFilter.includes(task.priority));
 
     // Main task assignees
     const mainAssigneeId = task.mainAssigneeId || task.mainAssignee || task.main_assignee_id;
@@ -391,16 +348,21 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
     }
 
     const matchesAssignee =
-      assigneeFilter === "all" ||
-      Number(mainAssigneeId) === Number(assigneeFilter) ||
-      supportingIds.includes(Number(assigneeFilter)) ||
+      assigneeFilter.length === 0 ||
+      assigneeFilter.some(a => Number(mainAssigneeId) === Number(a)) ||
+      assigneeFilter.some(a => supportingIds.includes(Number(a))) ||
       subtaskHasAssignee;
+
+    const matchesStatus =
+      statusFilter.length === 0 ||
+      (statusFilter.includes("done") && task.completed) ||
+      (statusFilter.includes("pending") && !task.completed);
 
     const matchesSearch = task.title
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
 
-    return matchesPriority && matchesAssignee && matchesSearch;
+    return matchesPriority && matchesAssignee && matchesStatus && matchesSearch;
   };
 
   const gapClass = {
@@ -454,43 +416,64 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
           ))}
         </div>
 
-        <select
-          value={
-            priorityFilter !== "all"
-              ? `priority:${priorityFilter}`
-              : assigneeFilter !== "all"
-              ? `assignee:${assigneeFilter}`
-              : "all"
-          }
-          onChange={(e) => handleUnifiedFilterChange(e.target.value)}
-          className="relative p-2 pr-8 text-sm text-black bg-yellow-200 border border-blue-300 rounded appearance-none"
-        >
-          <option value="all" className="bg-blue-200">
-            All Tasks
-          </option>
-          <optgroup label="Priority">
-            <option value="priority:High" className="bg-blue-200">
-              🔥 High
-            </option>
-            <option value="priority:Medium" className="bg-blue-200">
-              ⚠️ Medium
-            </option>
-            <option value="priority:Low" className="bg-blue-200">
-              ✅ Low
-            </option>
-          </optgroup>
-          <optgroup label="Assignee">
-            {users.map((u) => (
-              <option
-                key={u.id}
-                value={`assignee:${u.id}`}
-                className="bg-blue-200"
-              >
-                {u.initials} — {u.fullName}
-              </option>
-            ))}
-          </optgroup>
-        </select>
+        {/* Filters dropdown: portal-based to avoid z-index issues */}
+        <div className="relative inline-block">
+          <button 
+            ref={filterButtonRef} 
+            className="relative p-2 pr-8 text-sm text-blue-900 bg-yellow-300 border border-blue-600 rounded shadow-sm" 
+            onClick={() => setShowFilter(!showFilter)}
+          >
+            Task Filter
+            {(priorityFilter.length + assigneeFilter.length + statusFilter.length) > 0 && (
+              <span className="absolute -top-2 -right-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-blue-600 rounded-full">
+                {priorityFilter.length + assigneeFilter.length + statusFilter.length}
+              </span>
+            )}
+          </button>
+
+          <FilterDropdown 
+            buttonRef={filterButtonRef} 
+            isOpen={showFilter} 
+            onClose={() => setShowFilter(false)}
+          >
+            <div className="p-3 pointer-events-auto">
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-semibold text-blue-700">Priority</div>
+                <button onClick={clearFilters} className="text-white bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs">
+                  Clear
+                </button>
+              </div>
+              <div className="flex gap-2 mb-3">
+                {['High','Medium','Low'].map(p => (
+                  <label key={p} className="flex items-center gap-2">
+                    <input type="checkbox" checked={priorityFilter.includes(p)} onChange={() => togglePriority(p)} />
+                    <span className="text-sm">{p}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="mb-2 font-semibold text-blue-700">Assignee</div>
+              <div className="max-h-32 overflow-y-auto mb-3 border-l-2 border-yellow-400 pl-2">
+                {users.map(u => (
+                  <label key={u.id} className="flex items-center gap-2 p-1">
+                    <input type="checkbox" checked={assigneeFilter.includes(u.id)} onChange={() => toggleAssignee(u.id)} />
+                    <span className="text-sm">{u.initials} — {u.fullName}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="mb-2 font-semibold text-blue-700">Status</div>
+              <div className="flex gap-2">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={statusFilter.includes('pending')} onChange={() => toggleStatus('pending')} />
+                  <span className="text-sm">Pending</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={statusFilter.includes('done')} onChange={() => toggleStatus('done')} />
+                  <span className="text-sm">Done</span>
+                </label>
+              </div>
+            </div>
+          </FilterDropdown>
+        </div>
 
         {/* Search bar */}
         <div className="flex items-center gap-2">

@@ -52,7 +52,8 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
         const res = await fetch("http://localhost:8080/tasks/recent");
         if (res.ok) {
           const data = await res.json();
-          setLocalRecentTasks(data);
+          // Ensure we always store an array (guard against unexpected null/object responses)
+          setLocalRecentTasks(Array.isArray(data) ? data : []);
         }
       } catch (err) {
         // Optionally handle error
@@ -61,13 +62,30 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
     fetchRecentTasks();
   }, []);
 
+  // Keep localRecentTasks in sync with prop `recentTasks` when provided by App
+  useEffect(() => {
+    if (recentTasks && Array.isArray(recentTasks)) {
+      // backend fetch is still a fallback, but prefer the prop when available
+      setLocalRecentTasks(recentTasks);
+    }
+  }, [recentTasks]);
+
   // Optionally, refetch recent tasks when a new task is added
   useEffect(() => {
     const handleTaskAdded = () => {
       // Refetch recent tasks
       fetch("http://localhost:8080/tasks/recent")
-        .then((res) => res.ok ? res.json() : [])
-        .then((data) => setLocalRecentTasks(data));
+        .then(async (res) => {
+          if (!res.ok) return [];
+          try {
+            const d = await res.json();
+            return Array.isArray(d) ? d : [];
+          } catch (e) {
+            return [];
+          }
+        })
+        .then((data) => setLocalRecentTasks(data))
+        .catch(() => setLocalRecentTasks([]));
     };
     window.addEventListener("taskAdded", handleTaskAdded);
     return () => window.removeEventListener("taskAdded", handleTaskAdded);
@@ -222,17 +240,17 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
                     <div className="flex justify-between items-center mt-2">
                       <span
                         className={`text-xs px-2 py-1 rounded-full ${
-                          task.priority === "High"
+                          (task?.priority || "") === "High"
                             ? "bg-red-100 text-red-800"
-                            : task.priority === "Medium"
+                            : (task?.priority || "") === "Medium"
                             ? "bg-yellow-100 text-yellow-800"
                             : "bg-green-100 text-green-800"
                         }`}
                       >
-                        {task.priority}
+                        {task?.priority || "None"}
                       </span>
                       <span className="text-xs text-gray-500">
-                        {new Date(task.created_at).toLocaleDateString()}
+                        {task?.created_at ? new Date(task.created_at).toLocaleDateString() : ""}
                       </span>
                     </div>
                   </div>

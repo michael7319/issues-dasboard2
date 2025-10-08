@@ -1,7 +1,8 @@
 package main
 
 import (
-	"database/sql"
+	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -9,334 +10,358 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/jmoiron/sqlx"
-	_ "github.com/microsoft/go-mssqldb"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// Task matches frontend and DB schema
+// Task uses a numeric `id` field so frontend doesn't need to change.
 type Task struct {
-	ID                  int64     `json:"id" db:"id"`
-	Title               string    `json:"title" db:"title"`
-	Description         *string   `json:"description" db:"description"`
-	Priority            *string   `json:"priority" db:"priority"`
-	Type                *string   `json:"type" db:"type"`
-	Completed           bool      `json:"completed" db:"completed"`
-	Archived            bool      `json:"archived" db:"archived"`
-	Pinned              bool      `json:"pinned" db:"pinned"`
-	CreatedAt           time.Time `json:"created_at" db:"created_at"`
-	MainAssigneeID      *int      `json:"main_assignee_id" db:"main_assignee_id"`
-	SupportingAssignees *string   `json:"supporting_assignees" db:"supporting_assignees"` // JSON string
-	Schedule            *string   `json:"schedule" db:"schedule"`                         // JSON string
-	Subtasks            []Subtask `json:"subtasks,omitempty"`
+	ID                  int64     `bson:"id" json:"id"`
+	Title               string    `json:"title" bson:"title"`
+	Description         *string   `json:"description,omitempty" bson:"description,omitempty"`
+	Priority            *string   `json:"priority,omitempty" bson:"priority,omitempty"`
+	Type                *string   `json:"type,omitempty" bson:"type,omitempty"`
+	Completed           bool      `json:"completed" bson:"completed"`
+	Archived            bool      `json:"archived" bson:"archived"`
+	Pinned              bool      `json:"pinned" bson:"pinned"`
+	CreatedAt           time.Time `json:"created_at" bson:"created_at"`
+	MainAssigneeID      *int      `json:"main_assignee_id,omitempty" bson:"main_assignee_id,omitempty"`
+	SupportingAssignees *string   `json:"supporting_assignees,omitempty" bson:"supporting_assignees,omitempty"`
+	Schedule            *string   `json:"schedule,omitempty" bson:"schedule,omitempty"`
+	Subtasks            []Subtask `json:"subtasks,omitempty" bson:"-"`
 }
 
-// Subtask mirrors frontend
 type Subtask struct {
-	ID                  int64   `json:"id" db:"id"`
-	TaskID              int64   `json:"task_id" db:"task_id"`
-	Title               string  `json:"title" db:"title"`
-	Completed           bool    `json:"completed" db:"completed"`
-	MainAssigneeID      *int    `json:"main_assignee_id" db:"main_assignee_id"`
-	SupportingAssignees *string `json:"supporting_assignees" db:"supporting_assignees"` // JSON string
-	Schedule            *string `json:"schedule" db:"schedule"`                         // JSON string
+	ID                  int64   `bson:"id" json:"id"`
+	TaskID              int64   `json:"task_id" bson:"task_id"`
+	Title               string  `json:"title" bson:"title"`
+	Completed           bool    `json:"completed" bson:"completed"`
+	MainAssigneeID      *int    `json:"main_assignee_id,omitempty" bson:"main_assignee_id,omitempty"`
+	SupportingAssignees *string `json:"supporting_assignees,omitempty" bson:"supporting_assignees,omitempty"`
+	Schedule            *string `json:"schedule,omitempty" bson:"schedule,omitempty"`
 }
 
-// User for exposing real users from DB
 type User struct {
-	ID   int    `json:"id" db:"id"`
-	Name string `json:"name" db:"name"`
+	ID   int64  `bson:"id" json:"id"`
+	Name string `bson:"name" json:"name"`
 }
-
-var db *sqlx.DB
 
 func main() {
-	// ...existing code...
-
-	// Connect to SQL Server
-	connStr := "server=MICHAEL,1433;database=issues_tasks_db;trusted_connection=true;TrustServerCertificate=true;"
-	var err error
-	db, err = sqlx.Open("mssql", connStr)
+	// Connect to MongoDB (default localhost)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
 	if err != nil {
-		log.Fatal("Failed to connect to DB:", err)
+		log.Fatal("Failed to connect to MongoDB:", err)
 	}
-	defer db.Close()
-
-	err = db.Ping()
-	if err != nil {
-		log.Fatal("DB ping failed:", err)
+	defer func() { _ = client.Disconnect(context.Background()) }()
+	if err := client.Ping(context.Background(), nil); err != nil {
+		log.Fatal("Failed to ping MongoDB:", err)
 	}
-	log.Println("Connected to SQL Server!")
+	log.Println("Connected to MongoDB")
 
-	// Gin router with CORS
+	db := client.Database("issues_tasks_db")
+
 	r := gin.Default()
 	r.Use(cors.Default())
 
-	// GET /tasks/recent - Return 5 most recently created, non-archived, non-completed tasks
-	r.GET("/tasks/recent", func(c *gin.Context) {
-		var tasks []Task
-		err := db.Select(&tasks, `SELECT TOP 5 * FROM Tasks WHERE archived = 0 AND completed = 0 ORDER BY created_at DESC`)
+	// helper to get next sequence number
+	getNextSeq := func(ctx context.Context, name string) (int64, error) {
+		counters := db.Collection("counters")
+		opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
+		var out bson.M
+		err := counters.FindOneAndUpdate(ctx, bson.M{"_id": name}, bson.M{"$inc": bson.M{"seq": 1}}, opts).Decode(&out)
 		if err != nil {
+			return 0, err
+		}
+		switch v := out["seq"].(type) {
+		case int32:
+			return int64(v), nil
+		case int64:
+			return v, nil
+		case float64:
+			return int64(v), nil
+		default:
+			return 0, nil
+		}
+	}
+
+	// GET /tasks/recent
+	r.GET("/tasks/recent", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		tasksColl := db.Collection("tasks")
+		filter := bson.M{"archived": false, "completed": false}
+		op := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(5)
+		cur, err := tasksColl.Find(ctx, filter, op)
+		if err != nil {
+			log.Println("/tasks/recent Find error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		var tasks []Task
+		if err := cur.All(ctx, &tasks); err != nil {
+			log.Println("/tasks/recent cursor.All error:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, tasks)
 	})
 
-	// GET /users - return actual users from DB
+	// GET /users
 	r.GET("/users", func(c *gin.Context) {
-		var users []User
-		err := db.Select(&users, "SELECT id, name FROM Users ORDER BY name ASC")
+		ctx := c.Request.Context()
+		usersColl := db.Collection("users")
+		cur, err := usersColl.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 		if err != nil {
+			log.Println("/users Find error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		var users []User
+		if err := cur.All(ctx, &users); err != nil {
+			log.Println("/users cursor.All error:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, users)
 	})
 
-	// GET /tasks - Fetch all tasks with subtasks (include archived; frontend filters)
+	// GET /tasks
 	r.GET("/tasks", func(c *gin.Context) {
-		var tasks []Task
-		err := db.Select(&tasks, "SELECT * FROM Tasks ORDER BY pinned DESC, created_at DESC")
+		ctx := c.Request.Context()
+		tasksColl := db.Collection("tasks")
+		subtasksColl := db.Collection("subtasks")
+		cur, err := tasksColl.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "pinned", Value: -1}, {Key: "created_at", Value: -1}}))
 		if err != nil {
+			log.Println("/tasks Find error:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
-		// Fetch subtasks for each task
+		var tasks []Task
+		if err := cur.All(ctx, &tasks); err != nil {
+			log.Println("/tasks cursor.All error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		for i := range tasks {
-			var subtasks []Subtask
-			err := db.Select(&subtasks, "SELECT * FROM Subtasks WHERE task_id = ?", tasks[i].ID)
+			subCur, err := subtasksColl.Find(ctx, bson.M{"task_id": tasks[i].ID})
 			if err != nil {
+				log.Println("subtasks Find error:", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			tasks[i].Subtasks = subtasks
+			var subs []Subtask
+			if err := subCur.All(ctx, &subs); err != nil {
+				log.Println("subtasks cursor.All error:", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			tasks[i].Subtasks = subs
 		}
 		c.JSON(http.StatusOK, tasks)
 	})
 
-	// POST /tasks - Create a task
+	// POST /tasks
 	r.POST("/tasks", func(c *gin.Context) {
+		ctx := c.Request.Context()
 		var task Task
 		if err := c.BindJSON(&task); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-
-		// Validate that the main_assignee_id exists in Users table if it's not 0 / not nil
-		if task.MainAssigneeID != nil && *task.MainAssigneeID != 0 {
-			var userExists bool
-			err := db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", *task.MainAssigneeID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
-				return
-			}
-			if !userExists {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Main assignee ID does not exist"})
-				return
-			}
+		if task.CreatedAt.IsZero() {
+			task.CreatedAt = time.Now().UTC()
 		}
-
-		// FIXED: Use OUTPUT clause to get the inserted ID safely
-		var id sql.NullInt64
-		err := db.Get(&id,
-			`INSERT INTO Tasks (title, description, priority, type, main_assignee_id, supporting_assignees, schedule, completed, archived, pinned)
-			 OUTPUT INSERTED.id
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			task.Title, task.Description, task.Priority, task.Type, task.MainAssigneeID, task.SupportingAssignees,
-			task.Schedule, task.Completed, task.Archived, task.Pinned)
-
+		seq, err := getNextSeq(ctx, "taskid")
 		if err != nil {
+			log.Println("getNextSeq error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate id"})
+			return
+		}
+		task.ID = seq
+		tasksColl := db.Collection("tasks")
+		if _, err := tasksColl.InsertOne(ctx, task); err != nil {
+			log.Println("tasks InsertOne error:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
-		if !id.Valid {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get inserted ID"})
-			return
-		}
-
-		task.ID = id.Int64
 		c.JSON(http.StatusCreated, task)
 	})
 
-	// PUT /tasks/:id - Update task
+	// PUT /tasks/:id
 	r.PUT("/tasks/:id", func(c *gin.Context) {
-		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		ctx := c.Request.Context()
+		idStr := c.Param("id")
+		idNum, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 			return
 		}
-		var task Task
-		if err := c.BindJSON(&task); err != nil {
+		var updateData map[string]interface{}
+		if err := c.BindJSON(&updateData); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-
-		// Validate that the main_assignee_id exists in Users table if it's not 0 / not nil
-		if task.MainAssigneeID != nil && *task.MainAssigneeID != 0 {
-			var userExists bool
-			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", *task.MainAssigneeID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
-				return
-			}
-			if !userExists {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Main assignee ID does not exist"})
-				return
-			}
-		}
-
-		_, err = db.Exec(
-			`UPDATE Tasks SET title = ?, description = ?, priority = ?, type = ?, main_assignee_id = ?,
-			 supporting_assignees = ?, schedule = ?, completed = ?, archived = ?, pinned = ?
-			 WHERE id = ?`,
-			task.Title, task.Description, task.Priority, task.Type, task.MainAssigneeID,
-			task.SupportingAssignees, task.Schedule, task.Completed, task.Archived, task.Pinned, id)
-		if err != nil {
+		delete(updateData, "id")
+		tasksColl := db.Collection("tasks")
+		if _, err := tasksColl.UpdateOne(ctx, bson.M{"id": idNum}, bson.M{"$set": updateData}); err != nil {
+			log.Println("tasks UpdateOne error:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		task.ID = id
-		c.JSON(http.StatusOK, task)
+		var updated Task
+		if err := tasksColl.FindOne(ctx, bson.M{"id": idNum}).Decode(&updated); err != nil {
+			log.Println("tasks FindOne after update error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated task"})
+			return
+		}
+		c.JSON(http.StatusOK, updated)
 	})
 
 	// DELETE /tasks/:id
 	r.DELETE("/tasks/:id", func(c *gin.Context) {
-		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		ctx := c.Request.Context()
+		idStr := c.Param("id")
+		idNum, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 			return
 		}
-		_, err = db.Exec("DELETE FROM Tasks WHERE id = ?", id)
-		if err != nil {
+		tasksColl := db.Collection("tasks")
+		if _, err := tasksColl.DeleteOne(ctx, bson.M{"id": idNum}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 	})
 
-	// POST /tasks/:id/subtasks - FIXED NULL handling
+	// POST /tasks/:id/subtasks
 	r.POST("/tasks/:id/subtasks", func(c *gin.Context) {
-		taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		ctx := c.Request.Context()
+		idStr := c.Param("id")
+		taskIDNum, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
 			return
 		}
-		var subtask Subtask
-		if err := c.BindJSON(&subtask); err != nil {
+		var raw map[string]interface{}
+		if err := c.BindJSON(&raw); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-
-		// Validate main_assignee_id if provided
-		if subtask.MainAssigneeID != nil && *subtask.MainAssigneeID != 0 {
-			var userExists bool
-			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", *subtask.MainAssigneeID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
-				return
-			}
-			if !userExists {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Main assignee ID does not exist"})
-				return
+		subtask := Subtask{}
+		subtask.TaskID = taskIDNum
+		if title, ok := raw["title"].(string); ok {
+			subtask.Title = title
+		}
+		if completed, ok := raw["completed"].(bool); ok {
+			subtask.Completed = completed
+		}
+		if mainAssignee, ok := raw["main_assignee_id"].(float64); ok {
+			v := int(mainAssignee)
+			subtask.MainAssigneeID = &v
+		} else if mainAssignee, ok := raw["main_assignee_id"].(int); ok {
+			subtask.MainAssigneeID = &mainAssignee
+		}
+		if sa, ok := raw["supporting_assignees"]; ok {
+			switch v := sa.(type) {
+			case string:
+				subtask.SupportingAssignees = &v
+			case []interface{}:
+				b, _ := json.Marshal(v)
+				s := string(b)
+				subtask.SupportingAssignees = &s
 			}
 		}
-
-		// FIXED: Use OUTPUT clause and sql.NullInt64 to handle NULL safely
-		var id sql.NullInt64
-		err = db.Get(&id,
-			`INSERT INTO Subtasks (task_id, title, completed, main_assignee_id, supporting_assignees, schedule)
-			 OUTPUT INSERTED.id
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			taskID, subtask.Title, subtask.Completed, subtask.MainAssigneeID, subtask.SupportingAssignees, subtask.Schedule)
-
+		if sched, ok := raw["schedule"]; ok {
+			switch v := sched.(type) {
+			case string:
+				subtask.Schedule = &v
+			case map[string]interface{}:
+				b, _ := json.Marshal(v)
+				s := string(b)
+				subtask.Schedule = &s
+			}
+		}
+		seq, err := getNextSeq(ctx, "subtaskid")
 		if err != nil {
-			log.Println("Error inserting subtask:", err)
+			log.Println("subtask seq error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate id"})
+			return
+		}
+		subtask.ID = seq
+		subtasksColl := db.Collection("subtasks")
+		if _, err := subtasksColl.InsertOne(ctx, subtask); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
-		if !id.Valid {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get inserted subtask ID"})
-			return
-		}
-
-		subtask.ID = id.Int64
-		subtask.TaskID = taskID
 		c.JSON(http.StatusCreated, subtask)
 	})
 
-	// PUT /tasks/:id/subtasks/:subtaskId - Update subtask
+	// PUT /tasks/:id/subtasks/:subtaskId
 	r.PUT("/tasks/:id/subtasks/:subtaskId", func(c *gin.Context) {
-		taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		ctx := c.Request.Context()
+		idStr := c.Param("id")
+		subtaskStr := c.Param("subtaskId")
+		taskIDNum, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
 			return
 		}
-		subtaskID, err := strconv.ParseInt(c.Param("subtaskId"), 10, 64)
+		subtaskIDNum, err := strconv.ParseInt(subtaskStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subtask ID"})
 			return
 		}
-		var subtask Subtask
-		if err := c.BindJSON(&subtask); err != nil {
+		var updateData map[string]interface{}
+		if err := c.BindJSON(&updateData); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-
-		// Validate main_assignee_id if provided
-		if subtask.MainAssigneeID != nil && *subtask.MainAssigneeID != 0 {
-			var userExists bool
-			err = db.Get(&userExists, "SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE id = ?) THEN 1 ELSE 0 END", *subtask.MainAssigneeID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate assignee"})
-				return
-			}
-			if !userExists {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Main assignee ID does not exist"})
-				return
-			}
-		}
-
-		_, err = db.Exec(
-			`UPDATE Subtasks SET title = ?, completed = ?, main_assignee_id = ?, supporting_assignees = ?, schedule = ?
-			 WHERE id = ? AND task_id = ?`,
-			subtask.Title, subtask.Completed, subtask.MainAssigneeID, subtask.SupportingAssignees, subtask.Schedule,
-			subtaskID, taskID)
-		if err != nil {
+		delete(updateData, "id")
+		delete(updateData, "task_id")
+		subtasksColl := db.Collection("subtasks")
+		if _, err := subtasksColl.UpdateOne(ctx, bson.M{"id": subtaskIDNum, "task_id": taskIDNum}, bson.M{"$set": updateData}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		subtask.ID = subtaskID
-		subtask.TaskID = taskID
-		c.JSON(http.StatusOK, subtask)
+		var updated Subtask
+		if err := subtasksColl.FindOne(ctx, bson.M{"id": subtaskIDNum, "task_id": taskIDNum}).Decode(&updated); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated subtask"})
+			return
+		}
+		c.JSON(http.StatusOK, updated)
 	})
 
-	// DELETE /tasks/:id/subtasks/:subtaskId - Delete subtask
+	// DELETE /tasks/:id/subtasks/:subtaskId
 	r.DELETE("/tasks/:id/subtasks/:subtaskId", func(c *gin.Context) {
-		taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		ctx := c.Request.Context()
+		idStr := c.Param("id")
+		subtaskStr := c.Param("subtaskId")
+		taskIDNum, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
 			return
 		}
-		subtaskID, err := strconv.ParseInt(c.Param("subtaskId"), 10, 64)
+		subtaskIDNum, err := strconv.ParseInt(subtaskStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid subtask ID"})
 			return
 		}
-		_, err = db.Exec("DELETE FROM Subtasks WHERE id = ? AND task_id = ?", subtaskID, taskID)
-		if err != nil {
+		subtasksColl := db.Collection("subtasks")
+		if _, err := subtasksColl.DeleteOne(ctx, bson.M{"id": subtaskIDNum, "task_id": taskIDNum}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 	})
 
-	// POST /tasks/clear - Clear all non-archived tasks
+	// POST /tasks/clear
 	r.POST("/tasks/clear", func(c *gin.Context) {
-		_, err := db.Exec("DELETE FROM Tasks WHERE archived = 0")
-		if err != nil {
+		ctx := c.Request.Context()
+		tasksColl := db.Collection("tasks")
+		if _, err := tasksColl.DeleteMany(ctx, bson.M{"archived": false}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

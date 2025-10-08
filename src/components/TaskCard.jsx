@@ -472,6 +472,7 @@ export default function TaskCard({
           onDeleteSubtask={onDeleteSubtask}
           onUpdateSubtask={onUpdateSubtask}
           parentId={task.id}
+          parentTask={task}
         />
       ))}
     </div>
