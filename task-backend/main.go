@@ -52,6 +52,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	//client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb+srv://rachealaudu_db_user:Collectionz_2015@cluster0.gr27rks.mongodb.net/?retryWrites=true&w=majority"))
 	if err != nil {
 		log.Fatal("Failed to connect to MongoDB:", err)
 	}
@@ -62,6 +63,7 @@ func main() {
 	log.Println("Connected to MongoDB")
 
 	db := client.Database("issues_tasks_db")
+	//db := client.Database("task_manager_db")
 
 	r := gin.Default()
 	r.Use(cors.Default())

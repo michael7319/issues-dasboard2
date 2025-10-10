@@ -535,12 +535,12 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
         } animate-fadeIn`}
       >
         {filteredTasks.length > 0 ? (
-          <div className={`flex gap-2 flex-wrap ${gapClass.medium}`}>
+          <div className="flex flex-wrap gap-3 justify-start">
             {filteredTasks.map((task) => (
               <div
                 key={task.id}
                 id={`task-${task.id}`}
-                className={`transition-all duration-300 hover:scale-[1.01] ${highlightedTaskId === task.id ? "ring-4 ring-blue-900 ring-offset-2" : ""}`}
+                className={`transition-all duration-300 hover:scale-[1.02] ${highlightedTaskId === task.id ? "ring-4 ring-blue-900 ring-offset-2" : ""}`}
               >
                 <TaskCard
                   task={task}

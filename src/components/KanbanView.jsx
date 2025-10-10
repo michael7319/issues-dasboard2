@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
-import { DndContext, closestCenter, useSensor, useSensors, PointerSensor, useDroppable, DragOverlay } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { DndContext, rectIntersection, useSensor, useSensors, PointerSensor, KeyboardSensor, useDroppable, DragOverlay } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import AddTaskModal from "./AddTaskModal";
 import AddSubtaskModal from "./AddSubtaskModal";
@@ -23,7 +23,12 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+      activationConstraint: { 
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
@@ -405,16 +410,14 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
     if (activeId === overId) return;
 
-    // Determine what we're over
-    const overData = over.data?.current;
+    // Simple container detection - prioritize direct container matches
     let overContainer = null;
-
-    if (overData?.type === 'container') {
-      overContainer = overId; // "Todo" or "Done"
-    } else if (overData?.sortable?.containerId) {
-      overContainer = overData.sortable.containerId;
+    
+    // Check if we're directly over a container
+    if (overId === 'Todo' || overId === 'Done') {
+      overContainer = overId;
     } else {
-      // Check if we're over a task and determine its container
+      // Check if we're over a task and get its container
       const overTask = tasks.find(t => t.id === overId);
       if (overTask) {
         overContainer = getTaskContainer(overTask);
@@ -423,7 +426,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
     if (!overContainer) return;
 
-    // Track last-known container during drag for reliable drop resolution
+    // Track container for dragEnd
     lastOverContainerRef.current = overContainer;
 
     const activeTask = tasks.find(t => t.id === activeId);
@@ -431,17 +434,17 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
     if (activeContainer === overContainer) return;
 
-    // Move task between containers (optimistic update)
+    console.log(`Moving task from ${activeContainer} to ${overContainer}`); // Debug log
+
+    // Optimistic update
     setTasks((prev) => {
       const activeIndex = prev.findIndex(t => t.id === activeId);
-      const overIndex = prev.findIndex(t => t.id === overId);
-      
       if (activeIndex === -1) return prev;
 
       const newTasks = [...prev];
       const [movedTask] = newTasks.splice(activeIndex, 1);
       
-      // Update completion status based on target container
+      // Update completion status
       const newCompleted = overContainer === "Done";
       movedTask.completed = newCompleted;
       if (movedTask.subtasks) {
@@ -451,17 +454,8 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
         }));
       }
 
-      // Insert at appropriate position
-      if (overIndex >= 0 && overIndex !== activeIndex) {
-        const adjustedIndex = overIndex > activeIndex ? overIndex - 1 : overIndex;
-        newTasks.splice(adjustedIndex, 0, movedTask);
-      } else {
-        // Add to end of target container
-        const targetTasks = newTasks.filter(t => getTaskContainer(t) === overContainer);
-        const lastTargetIndex = newTasks.lastIndexOf(targetTasks[targetTasks.length - 1]);
-        newTasks.splice(lastTargetIndex + 1, 0, movedTask);
-      }
-
+      // Add to end of target container
+      newTasks.push(movedTask);
       return newTasks;
     });
   };
@@ -576,15 +570,21 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
   // Droppable container component
   const DroppableContainer = ({ id, children }) => {
-    const { setNodeRef } = useDroppable({
+    const { setNodeRef, isOver } = useDroppable({
       id,
       data: {
         type: 'container',
+        accepts: ['task']
       },
     });
 
     return (
-      <div ref={setNodeRef} className="min-h-[200px] w-full">
+      <div 
+        ref={setNodeRef} 
+        className={`min-h-[200px] w-full p-2 rounded-lg transition-colors ${
+          isOver ? 'bg-blue-100/20 border-2 border-blue-400 border-dashed' : 'bg-transparent'
+        }`}
+      >
         {children}
       </div>
     );
@@ -593,6 +593,10 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
   const SortableTask = ({ task, index, ...props }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
       id: task.id,
+      data: {
+        type: 'task',
+        task: task
+      }
     });
 
     const style = {
@@ -657,7 +661,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
       <DndContext 
         sensors={sensors} 
-        collisionDetection={closestCenter} 
+        collisionDetection={rectIntersection} 
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
@@ -670,14 +674,14 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
             const [firstColumn, secondColumn] = splitTasks(taskList);
             return (
               <DroppableContainer key={status} id={status}>
-                <div className={`flex-1 min-w-[400px] p-4 rounded-xl shadow-lg ${theme === "light" ? "bg-gray-300" : "bg-gray-700"} transition-all duration-300`}>
+                <div className={`flex-1 min-w-[520px] max-w-[600px] p-4 rounded-xl shadow-lg ${theme === "light" ? "bg-gray-300" : "bg-gray-700"} transition-all duration-300`}>
                   <h2 className={`mb-4 text-xl font-bold flex items-center gap-2 ${theme === "light" ? "text-black" : "text-white"}`}>
                     {status === "Todo" ? "📋" : "✅"} {status}
                     <span className={`ml-2 text-sm ${theme === "light" ? "text-black" : "text-gray-300"}`}> ({taskList.length})</span>
                   </h2>
                   <SortableContext items={taskList.map((task) => task.id)} strategy={verticalListSortingStrategy}>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-3 min-h-[200px]">
+                      <div className="space-y-3">
                         {firstColumn.map((task, index) =>
                           task.id ? (
                             <SortableTask
@@ -698,8 +702,13 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
                             />
                           ) : null
                         )}
+                        {firstColumn.length === 0 && taskList.length === 0 && (
+                          <div className="flex items-center justify-center h-32 text-gray-400 text-sm border-2 border-dashed border-gray-600 rounded-lg">
+                            Drop here
+                          </div>
+                        )}
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {secondColumn.map((task, index) =>
                           task.id ? (
                             <SortableTask
@@ -719,6 +728,11 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
                               onArchive={handleArchiveTask}
                             />
                           ) : null
+                        )}
+                        {secondColumn.length === 0 && taskList.length === 0 && (
+                          <div className="flex items-center justify-center h-32 text-gray-400 text-sm border-2 border-dashed border-gray-600 rounded-lg">
+                            Drop here
+                          </div>
                         )}
                       </div>
                     </div>

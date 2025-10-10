@@ -251,7 +251,7 @@ function App() {
     <div className={`flex min-h-screen ${theme === "light" ? "bg-white text-gray-800" : "bg-gray-950 text-gray-200"}`}>
       <Sidebar currentView={view} setView={setView} theme={theme} />
       <main
-        className={`flex-grow p-6 overflow-y-auto transition-all duration-300 ${isSidebarCollapsed ? "ml-16" : "ml-64"} ${theme === "light" ? "bg-gray-100" : "bg-gray-900"}`}
+        className={`flex-grow p-3 sm:p-6 overflow-y-auto transition-all duration-300 ${isSidebarCollapsed ? "ml-16" : "ml-16 lg:ml-64"} ${theme === "light" ? "bg-gray-100" : "bg-gray-900"}`}
       >
         {view === "task" ? (
           <TaskView 

@@ -210,7 +210,7 @@ function SubtaskCard({
 
   return (
     <div
-      className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md cursor-pointer w-full max-w-[248px]"
+      className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md cursor-pointer w-full"
       onMouseEnter={() => setHoveredSubtaskId(sub.id)}
       onMouseLeave={() => setHoveredSubtaskId(null)}
       onClick={handleEditSubtask}
@@ -234,7 +234,7 @@ function SubtaskCard({
       </div>
 
       <div className="pt-4">
-        <div className="flex items-start gap-1 pr-3">
+        <div className="flex items-start gap-2 w-full">
           <input
             type="checkbox"
             checked={sub.completed}
@@ -243,9 +243,9 @@ function SubtaskCard({
             className="w-3 h-3 accent-green-500 cursor-pointer mt-0.5 flex-shrink-0"
           />
           <span 
-            className={`cursor-pointer break-words whitespace-pre-wrap overflow-hidden ${sub.completed ? "line-through text-gray-400" : ""}`}
+            className={`flex-1 cursor-pointer break-words whitespace-pre-wrap overflow-hidden min-w-0 ${sub.completed ? "line-through text-gray-400" : ""}`}
             onClick={handleSubtaskToggle}
-            style={{ wordBreak: 'break-word', maxWidth: 'calc(100% - 12px)' }}
+            style={{ wordBreak: 'break-word' }}
           >
             {sub.title}
           </span>
@@ -371,7 +371,7 @@ export default function TaskCard({
 
   return (
     <div
-      className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px] cursor-pointer"
+      className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[250px] cursor-pointer"
       onClick={() => onEdit(task)}
     >
       <div
