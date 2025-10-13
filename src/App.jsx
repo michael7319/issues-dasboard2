@@ -5,7 +5,8 @@ import KanbanView from "./components/KanbanView";
 import TaskView from "./components/TaskView";
 import ArchivedTasks from "./components/ArchivedTasks";
 
-const API_BASE = "http://localhost:8080";
+// Dynamic API base URL - uses current host for network access
+const API_BASE = `http://${window.location.hostname}:8080`;
 
 const toSnakeCase = (obj) => {
   if (Array.isArray(obj)) {

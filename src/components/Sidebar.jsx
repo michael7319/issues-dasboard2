@@ -48,7 +48,7 @@ export default function Sidebar({ currentView, setView, theme }) {
   // Fetch recent tasks from backend - simplified version
   const fetchRecentTasks = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:8080/tasks/recent");
+      const res = await fetch(`http://${window.location.hostname}:8080/tasks/recent`);
       if (res.ok) {
         const data = await res.json();
         setRecentTasks(Array.isArray(data) ? data : []);

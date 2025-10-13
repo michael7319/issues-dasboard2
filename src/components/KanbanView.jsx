@@ -6,7 +6,8 @@ import AddTaskModal from "./AddTaskModal";
 import AddSubtaskModal from "./AddSubtaskModal";
 import TaskCard from "./TaskCard";
 
-const API_BASE = "http://localhost:8080";
+// Dynamic API base URL - uses current host for network access
+const API_BASE = `http://${window.location.hostname}:8080`;
 
 export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, onArchive }) {
   const [showSubtaskModal, setShowSubtaskModal] = useState(false);

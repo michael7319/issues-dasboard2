@@ -5,7 +5,8 @@ import AddTaskModal from "./AddTaskModal";
 import AddSubtaskModal from "./AddSubtaskModal";
 import users from "../data/users";
 
-const API_BASE = "http://localhost:8080";
+// Dynamic API base URL - uses current host for network access
+const API_BASE = `http://${window.location.hostname}:8080`;
 
 export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive }) {
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
