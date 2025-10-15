@@ -96,31 +96,39 @@ export default function Sidebar({ currentView, setView, theme }) {
       style={{ scrollbarWidth: "none" }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className={`${isCollapsed ? "mb-4" : "mb-8"}`}>
         {!isCollapsed && (
-          <div className={`w-full text-center border-2 rounded-xl shadow-lg px-4 py-3 mb-2 transition-all duration-300
+          <div className={`text-center border-2 rounded-xl shadow-lg px-3 py-2.5 mb-3 transition-all duration-300
             ${localTheme === "light" 
               ? "bg-gradient-to-r from-yellow-100 via-blue-100 to-blue-200 border-blue-400" 
               : "bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 border-blue-400"}`}
           >
-            <img src="/BBC Logo.png" alt="Logo" className="mx-auto mb-2 h-15 w-25" />
-            <h2 className={`text-2xl font-bold mb-1 transition-colors duration-300 ${localTheme === "dark" ? "text-yellow-300" : "text-blue-900"}`}>
+            <img src="/BBC Logo.png" alt="Logo" className="mx-auto mb-1.5 h-12 w-auto" />
+            <h2 className={`text-xl font-bold mb-0.5 transition-colors duration-300 ${localTheme === "dark" ? "text-yellow-300" : "text-blue-900"}`}>
               Issues Dashboard
             </h2>
-            <p className={`text-sm font-medium transition-colors duration-300 ${localTheme === "dark" ? "text-blue-200" : "text-blue-700"}`}>
+            <p className={`text-xs font-medium transition-colors duration-300 ${localTheme === "dark" ? "text-blue-200" : "text-blue-700"}`}>
               Manage your tasks
             </p>
           </div>
         )}
         <button
           onClick={toggleSidebar}
-          className="p-2 rounded-full hover:bg-blue-300/50 focus:outline-none focus:ring-2 focus:ring-sidebar-primary transition-colors duration-200"
+          className={`w-full px-4 py-3 rounded-lg shadow-md transition-colors flex items-center justify-center ${
+            isCollapsed 
+              ? localTheme === "light" 
+                ? "bg-gray-600 hover:bg-gray-500 text-white" 
+                : "bg-blue-600 hover:bg-blue-700 text-white"
+              : localTheme === "light" 
+                ? "hover:bg-blue-300/30 text-gray-300 hover:text-white" 
+                : "hover:bg-blue-300/50 text-blue-800 hover:text-blue-900"
+          }`}
           aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {isCollapsed ? (
-            <ChevronRight size={20} className="text-blue-800" />
+            <ChevronRight size={20} strokeWidth={2.5} className="text-white flex-shrink-0" />
           ) : (
-            <ChevronLeft size={20} className="text-blue-800" />
+            <ChevronLeft size={20} className="flex-shrink-0" />
           )}
         </button>
       </div>
@@ -150,7 +158,7 @@ export default function Sidebar({ currentView, setView, theme }) {
           } ${isCollapsed ? "justify-center" : "justify-start"}`}
           aria-label="Task View"
         >
-          <List size={20} className="flex-shrink-0" />
+          <List size={20} className={`flex-shrink-0 ${currentView === "task" ? "text-white" : "text-blue-800"}`} />
           {!isCollapsed && <span className="ml-2 text-sm font-medium">Task View</span>}
         </button>
 
@@ -163,7 +171,7 @@ export default function Sidebar({ currentView, setView, theme }) {
           } ${isCollapsed ? "justify-center" : "justify-start"}`}
           aria-label="Timeframe View"
         >
-          <Calendar size={20} className="flex-shrink-0" />
+          <Calendar size={20} className={`flex-shrink-0 ${currentView === "timeframe" ? "text-white" : "text-blue-800"}`} />
           {!isCollapsed && <span className="ml-2 text-sm font-medium">Timeframe View</span>}
         </button>
 
@@ -176,7 +184,7 @@ export default function Sidebar({ currentView, setView, theme }) {
           } ${isCollapsed ? "justify-center" : "justify-start"}`}
           aria-label="Kanban View"
         >
-          <Kanban size={20} className="flex-shrink-0" />
+          <Kanban size={20} className={`flex-shrink-0 ${currentView === "kanban" ? "text-white" : "text-blue-800"}`} />
           {!isCollapsed && <span className="ml-2 text-sm font-medium">Kanban View</span>}
         </button>
 
@@ -189,7 +197,7 @@ export default function Sidebar({ currentView, setView, theme }) {
           } ${isCollapsed ? "justify-center" : "justify-start"}`}
           aria-label="Archived Tasks"
         >
-          <Archive size={20} className="flex-shrink-0" />
+          <Archive size={20} className={`flex-shrink-0 ${currentView === "archived" ? "text-white" : "text-blue-800"}`} />
           {!isCollapsed && <span className="ml-2 text-sm font-medium">Archived Tasks</span>}
         </button>
       </nav>

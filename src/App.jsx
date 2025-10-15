@@ -62,27 +62,48 @@ function App() {
       const data = await response.json();
       console.log("Fetched tasks:", data); // Debug log
       
-      // Fetch attachments for each task
-      const tasksWithAttachments = await Promise.all(
-        data.map(async (task) => {
+      // Show tasks immediately without attachments
+      const tasksWithEmptyAttachments = toCamelCase(data.map(task => ({ ...task, attachments: [] })));
+      setTasks(tasksWithEmptyAttachments);
+      setLoading(false);
+      
+      // Fetch attachments in batches of 5 concurrent requests (reduces load)
+      const batchSize = 5;
+      const taskIds = data.map(t => t.id);
+      
+      for (let i = 0; i < taskIds.length; i += batchSize) {
+        const batch = taskIds.slice(i, i + batchSize);
+        const batchPromises = batch.map(async (taskId) => {
           try {
-            const attRes = await fetch(`${API_BASE}/tasks/${task.id}/attachments`);
+            const attRes = await fetch(`${API_BASE}/tasks/${taskId}/attachments`);
             if (attRes.ok) {
               const attData = await attRes.json();
-              return { ...task, attachments: attData };
+              return { taskId, attachments: attData };
             }
           } catch (attErr) {
-            console.error(`Failed to fetch attachments for task ${task.id}:`, attErr);
+            console.error(`Failed to fetch attachments for task ${taskId}:`, attErr);
           }
-          return { ...task, attachments: [] };
-        })
-      );
+          return { taskId, attachments: [] };
+        });
+        
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Update tasks incrementally as each batch completes
+        setTasks(prevTasks => {
+          const updatedTasks = [...prevTasks];
+          batchResults.forEach(({ taskId, attachments }) => {
+            const taskIndex = updatedTasks.findIndex(t => t.id === taskId);
+            if (taskIndex !== -1) {
+              updatedTasks[taskIndex] = { ...updatedTasks[taskIndex], attachments };
+            }
+          });
+          return updatedTasks;
+        });
+      }
       
-      setTasks(toCamelCase(tasksWithAttachments));
     } catch (err) {
       console.error("Failed to fetch tasks:", err);
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };

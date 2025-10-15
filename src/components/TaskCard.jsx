@@ -372,16 +372,32 @@ export default function TaskCard({
     );
   };
 
+  const handleCardClick = (e) => {
+    // Only trigger modal if not clicking on interactive elements
+    const target = e.target;
+    if (target.tagName === 'BUTTON' || 
+        target.tagName === 'INPUT' || 
+        target.closest('button') || 
+        target.closest('input') ||
+        target.closest('span[role="button"]')) {
+      return;
+    }
+    
+    if (onTaskClick) {
+      onTaskClick(task);
+    }
+  };
+
   return (
     <>
       <div
-        className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[250px] cursor-pointer"
-        onClick={() => onTaskClick && onTaskClick(task)}
+        className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[250px]"
       >
       <div
-        className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md"
+        className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md cursor-pointer"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onClick={handleCardClick}
       >
         {/* Top Buttons Row */}
         <div className="absolute flex justify-between items-center top-1 left-1 right-1 px-1 z-30">
@@ -437,7 +453,10 @@ export default function TaskCard({
                 const hasMoreThanTwo = imageAttachments.length > 2;
                 
                 return (
-                  <div className={`flex flex-col gap-2 pr-1 ${hasMoreThanTwo ? 'max-h-[280px] overflow-y-auto custom-scrollbar-taskcard' : ''}`}>
+                  <div 
+                    className={`flex flex-col gap-2 pr-1 ${hasMoreThanTwo ? 'max-h-[280px] overflow-y-auto custom-scrollbar-taskcard' : ''}`}
+                    style={hasMoreThanTwo ? { scrollbarWidth: "none" } : {}}
+                  >
                     {imageAttachments.map((att, index) => {
                       const key = att.id || `image-${index}`;
                       return (

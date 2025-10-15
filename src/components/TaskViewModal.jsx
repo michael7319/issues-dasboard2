@@ -184,7 +184,10 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
         }
         onClose();
       }}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto custom-scrollbar-modal bg-gray-800 text-white border-gray-700">
+        <DialogContent 
+          className="max-w-5xl max-h-[90vh] overflow-y-auto custom-scrollbar-modal bg-gray-800 text-white border-gray-700"
+          style={{ scrollbarWidth: "none" }}
+        >
           <DialogHeader>
           <div className="flex items-start justify-between">
             <DialogTitle className="text-2xl font-bold text-white pr-8">
@@ -203,7 +206,7 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={onDelete}
+                onClick={() => onDelete(localTask.id)}
                 className="hover:bg-red-900/50 text-red-400"
                 title="Delete Task"
               >

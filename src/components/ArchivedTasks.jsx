@@ -16,7 +16,7 @@ export default function ArchivedTasks({ tasks, onEdit, onDelete, onArchive, onTa
       {archivedTasks.length === 0 ? (
         <p className="text-gray-500">No archived tasks</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 auto-rows-min">
+        <div className="flex flex-wrap gap-3 justify-start">
           {archivedTasks.map((task) => (
             <div key={task.id} className="[&_.bg-gray-900]:bg-gray-700 [&_.border-gray-700]:border-gray-600 [&_.bg-gray-800]:bg-gray-600 [&_.border-gray-600]:border-gray-500 [&_.bg-gray-700]:bg-gray-500">
               <TaskCard

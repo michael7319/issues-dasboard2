@@ -30,18 +30,6 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
     window.addEventListener("highlightTask", handleHighlightTask);
     return () => window.removeEventListener("highlightTask", handleHighlightTask);
   }, []);
-
-  // Listen for openEditModal event from TaskViewModal
-  useEffect(() => {
-    const handleOpenEditModal = (e) => {
-      if (e.detail?.task) {
-        setEditingTask(e.detail.task);
-        setIsModalOpen(true);
-      }
-    };
-    window.addEventListener("openEditModal", handleOpenEditModal);
-    return () => window.removeEventListener("openEditModal", handleOpenEditModal);
-  }, []);
   // Support multi-select filters for priority and assignees
   const [priorityFilter, setPriorityFilter] = useState([]);
   const [assigneeFilter, setAssigneeFilter] = useState([]);
@@ -234,6 +222,34 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  // Add attachment to task
+  const handleAttachmentAdded = (taskId, newAttachment) => {
+    setTasks(prevTasks =>
+      prevTasks.map(task =>
+        task.id === taskId
+          ? {
+              ...task,
+              attachments: [...(task.attachments || []), newAttachment]
+            }
+          : task
+      )
+    );
+  };
+
+  // Remove attachment from task
+  const handleAttachmentRemoved = (taskId, attachmentId) => {
+    setTasks(prevTasks =>
+      prevTasks.map(task =>
+        task.id === taskId
+          ? {
+              ...task,
+              attachments: (task.attachments || []).filter(att => att.id !== attachmentId)
+            }
+          : task
+      )
+    );
   };
 
   const handleDeleteSubtask = async (taskId, subtaskId) => {
@@ -567,6 +583,8 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
                   onArchive={handleArchiveTask}
                   onPin={handlePinTask}
                   onTaskClick={onTaskClick}
+                  onAttachmentAdded={(attachment) => handleAttachmentAdded(task.id, attachment)}
+                  onAttachmentRemoved={(attachmentId) => handleAttachmentRemoved(task.id, attachmentId)}
                 />
               </div>
             ))}
