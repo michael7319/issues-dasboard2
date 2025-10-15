@@ -1,2 +1,61 @@
 @import "tailwindcss";
 
+/* Custom subtle scrollbar for TaskCard images - hidden */
+.custom-scrollbar-taskcard::-webkit-scrollbar {
+  width: 0px;
+  display: none;
+}
+
+.custom-scrollbar-taskcard {
+  -ms-overflow-style: none;  /* IE and Edge */
+  /* Hide scrollbar for Firefox, Chrome, Safari, and Opera */
+  &::-webkit-scrollbar {
+    display: none;
+    width: 0px;
+    background: transparent;
+  }
+}
+
+/* Custom subtle scrollbar for TaskViewModal */
+.custom-scrollbar-modal::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar-modal::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.4);
+  border-radius: 3px;
+}
+
+.custom-scrollbar-modal::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3); /* Subtle purple/indigo tint */
+  border-radius: 3px;
+}
+
+.custom-scrollbar-modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5); /* More visible purple on hover */
+}
+
+/* Firefox scrollbar support (not available in Chrome < 121, Safari, Samsung Internet) */
+/* 'scrollbar-width' only works in Firefox. For Chrome, Safari, and others, use ::-webkit-scrollbar styles above. */
+/* For Chrome, Safari, and others, use ::-webkit-scrollbar styles above */
+
+.custom-scrollbar-taskcard {
+  /* Fallback for Chrome, Safari, and others */
+  &::-webkit-scrollbar {
+    width: 6px;
+    background: rgba(31, 41, 55, 0.3);
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(75, 85, 99, 0.5);
+    border-radius: 3px;
+  }
+  /* Firefox support */
+  /* 'scrollbar-color' is only supported in Firefox; fallback for other browsers is provided above */
+  scrollbar-color: rgba(75, 85, 99, 0.5) rgba(31, 41, 55, 0.3);
+  /* Fallback for Chrome, Safari, and others is provided above using ::-webkit-scrollbar */
+}
+
+.custom-scrollbar-modal {
+  scrollbar-color: rgba(99, 102, 241, 0.3) rgba(31, 41, 55, 0.4);
+}
+

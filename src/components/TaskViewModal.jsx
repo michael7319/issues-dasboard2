@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, Edit2, Trash2, Link as LinkIcon, FileText, Image as ImageIcon, Clock, Calendar } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -19,10 +19,17 @@ const parseAssignees = (assignees) => {
   return [];
 };
 
-export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, onDelete }) {
+export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, onDelete, onTaskUpdate }) {
   const [lightboxImage, setLightboxImage] = useState(null);
+  const lightboxClosingRef = useRef(false);
   const [timeLeft, setTimeLeft] = useState("--:--");
   const [expired, setExpired] = useState(false);
+  const [localTask, setLocalTask] = useState(task);
+
+  // Sync local task with prop
+  useEffect(() => {
+    setLocalTask(task);
+  }, [task]);
 
   // Reset lightbox when modal closes
   useEffect(() => {
@@ -85,11 +92,12 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
     }
   }, [task]);
   
-  if (!task) return null;
+  // Early return if no task - prevents any rendering or calculations
+  if (!localTask || !isOpen) return null;
 
   // Get user details
-  const mainAssignee = users.find((u) => u.id === Number(task.mainAssigneeId || task.main_assignee_id));
-  const supportingAssigneeIds = parseAssignees(task.supportingAssignees || task.supporting_assignees);
+  const mainAssignee = users.find((u) => u.id === Number(localTask.mainAssigneeId || localTask.main_assignee_id));
+  const supportingAssigneeIds = parseAssignees(localTask.supportingAssignees || localTask.supporting_assignees);
   const supportingAssignees = supportingAssigneeIds
     .map((id) => users.find((u) => u.id === Number(id)))
     .filter(Boolean);
@@ -97,7 +105,7 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
   // Parse schedule
   let schedule = null;
   try {
-    schedule = task.schedule ? (typeof task.schedule === 'string' ? JSON.parse(task.schedule) : task.schedule) : null;
+    schedule = localTask.schedule ? (typeof localTask.schedule === 'string' ? JSON.parse(localTask.schedule) : localTask.schedule) : null;
   } catch (e) {
     console.error("Failed to parse schedule:", e);
   }
@@ -125,7 +133,7 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
     // N-day repeat logic
     if (schedule.repeatDays && schedule.dueTime) {
       const now = new Date();
-      const created = new Date(task.createdAt || task.created_at || now);
+      const created = new Date(localTask.createdAt || localTask.created_at || now);
       const daysSince = Math.floor((now - created) / (1000 * 60 * 60 * 24));
       const cycleDay = daysSince % schedule.repeatDays;
       const [hour, minute] = schedule.dueTime.split(":").map(Number);
@@ -138,7 +146,7 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
     
     // Only day picked, expires after N days
     if (schedule.expiresInDays) {
-      const created = new Date(task.createdAt || task.created_at || new Date());
+      const created = new Date(localTask.createdAt || localTask.created_at || new Date());
       const expires = new Date(created.getTime() + schedule.expiresInDays * 24 * 60 * 60 * 1000);
       if (new Date() > expires) {
         return "TIME UP";
@@ -158,20 +166,35 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
     Low: "bg-green-500/20 text-green-400 border-green-500",
   };
 
+  const handleLightboxClose = () => {
+    lightboxClosingRef.current = true;
+    setLightboxImage(null);
+    // Reset the flag after a brief delay
+    setTimeout(() => {
+      lightboxClosingRef.current = false;
+    }, 100);
+  };
+
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-gray-800 text-white border-gray-700">
+      <Dialog open={isOpen} onOpenChange={(open) => {
+        // Ignore close events triggered while closing the lightbox
+        if (!open && lightboxClosingRef.current) {
+          return;
+        }
+        onClose();
+      }}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto custom-scrollbar-modal bg-gray-800 text-white border-gray-700">
           <DialogHeader>
           <div className="flex items-start justify-between">
             <DialogTitle className="text-2xl font-bold text-white pr-8">
-              {task.title}
+              {localTask.title}
             </DialogTitle>
             <div className="flex gap-2">
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onEdit(task)}
+                onClick={() => onEdit(localTask)}
                 className="hover:bg-gray-700"
                 title="Edit Task"
               >
@@ -195,20 +218,20 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
           <div className="flex gap-3 flex-wrap">
             <span
               className={`px-3 py-1 rounded-full text-sm font-semibold border ${
-                priorityColors[task.priority] || "bg-gray-700 text-gray-300 border-gray-600"
+                priorityColors[localTask.priority] || "bg-gray-700 text-gray-300 border-gray-600"
               }`}
             >
-              {task.priority} Priority
+              {localTask.priority} Priority
             </span>
             <span className="px-3 py-1 rounded-full text-sm bg-blue-500/20 text-blue-400 border border-blue-500">
-              {task.type}
+              {localTask.type}
             </span>
-            {task.completed && (
+            {localTask.completed && (
               <span className="px-3 py-1 rounded-full text-sm bg-green-500/20 text-green-400 border border-green-500">
                 ✓ Completed
               </span>
             )}
-            {task.archived && (
+            {localTask.archived && (
               <span className="px-3 py-1 rounded-full text-sm bg-gray-600/50 text-gray-400 border border-gray-600">
                 Archived
               </span>
@@ -216,10 +239,10 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
           </div>
 
           {/* Description */}
-          {task.description && (
+          {localTask.description && (
             <div>
               <h3 className="text-sm font-semibold text-gray-400 mb-2">Description</h3>
-              <p className="text-gray-200 whitespace-pre-wrap">{task.description}</p>
+              <p className="text-gray-200 whitespace-pre-wrap">{localTask.description}</p>
             </div>
           )}
 
@@ -228,7 +251,7 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
             <div>
               <h3 className="text-sm font-semibold text-gray-400 mb-2 flex items-center gap-2">
                 <Clock size={16} />
-                Due Date
+                {schedule?.mode === "countdown" ? "Countdown" : "Due Date"}
               </h3>
               <p className={`text-lg font-mono ${dueDisplay === "TIME UP" || expired ? "text-red-500 font-bold" : "text-gray-200"}`}>
                 {dueDisplay}
@@ -266,14 +289,14 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
           )}
 
           {/* Attachments */}
-          {task.attachments && task.attachments.length > 0 && (
+          {localTask.attachments && localTask.attachments.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-400 mb-3">Attachments</h3>
               
               {/* Images - Show larger previews */}
-              {task.attachments.filter(att => att.type === "image" && att.url).length > 0 && (
+              {localTask.attachments.filter(att => att.type === "image" && att.url).length > 0 && (
                 <div className="space-y-3 mb-4">
-                  {task.attachments
+                  {localTask.attachments
                     .filter(att => att.type === "image" && att.url)
                     .map((att, index) => (
                       <div key={att.id || `img-${index}`} className="space-y-2">
@@ -309,9 +332,9 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
               )}
 
               {/* Links and Documents */}
-              {task.attachments.filter(att => (att.type === "link" || att.type === "document") && att.url).length > 0 && (
+              {localTask.attachments.filter(att => (att.type === "link" || att.type === "document") && att.url).length > 0 && (
                 <div className="space-y-2">
-                  {task.attachments
+                  {localTask.attachments
                     .filter(att => (att.type === "link" || att.type === "document") && att.url)
                     .map((att, index) => {
                       const isUploadedFile = att.url.startsWith('data:');
@@ -346,19 +369,60 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
           )}
 
           {/* Subtasks */}
-          {task.subtasks && task.subtasks.length > 0 && (
+          {localTask.subtasks && localTask.subtasks.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-400 mb-3">
-                Subtasks ({task.subtasks.filter(s => s.completed).length}/{task.subtasks.length})
+                Subtasks ({localTask.subtasks.filter(s => s.completed).length}/{localTask.subtasks.length})
               </h3>
               <div className="space-y-2">
-                {task.subtasks.map((subtask) => {
+                {localTask.subtasks.map((subtask) => {
                   const subMainAssignee = users.find((u) => u.id === subtask.mainAssigneeId);
                   const subSupportingAssignees = subtask.supportingAssignees
                     ? JSON.parse(subtask.supportingAssignees)
                         .map((id) => users.find((u) => u.id === id))
                         .filter(Boolean)
                     : [];
+
+                  // Parse subtask schedule for countdown/due date display
+                  let subSchedule = null;
+                  let subDueDisplay = null;
+                  if (subtask.schedule) {
+                    try {
+                      subSchedule = typeof subtask.schedule === 'string' 
+                        ? JSON.parse(subtask.schedule) 
+                        : subtask.schedule;
+                      
+                      // Calculate due display for subtask
+                      if (subSchedule.mode === "countdown" && subSchedule.countdownSeconds) {
+                        const start = new Date(subSchedule.countdownStartAt || new Date());
+                        const end = new Date(start.getTime() + subSchedule.countdownSeconds * 1000);
+                        const now = new Date();
+                        const diffMs = end - now;
+                        
+                        if (diffMs <= 0) {
+                          subDueDisplay = "TIME UP";
+                        } else {
+                          const hours = Math.floor(diffMs / (1000 * 60 * 60));
+                          const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                          const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+                          subDueDisplay = `${hours}h ${minutes}m ${seconds}s`;
+                        }
+                      } else if (subSchedule.dueAt) {
+                        const dueDate = new Date(subSchedule.dueAt);
+                        if (dueDate < new Date()) {
+                          subDueDisplay = "TIME UP";
+                        } else {
+                          subDueDisplay = dueDate.toLocaleDateString(undefined, {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          });
+                        }
+                      }
+                    } catch (e) {
+                      console.warn("Failed to parse subtask schedule:", e);
+                    }
+                  }
 
                   return (
                     <div
@@ -373,27 +437,96 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
                         <input
                           type="checkbox"
                           checked={subtask.completed}
-                          readOnly
-                          className="mt-1 w-4 h-4 accent-green-500"
+                          onChange={async () => {
+                            try {
+                              const API_BASE = `http://${window.location.hostname}:8080`;
+                              const response = await fetch(`${API_BASE}/tasks/${localTask.id}/subtasks/${subtask.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ completed: !subtask.completed })
+                              });
+                              
+                              if (response.ok) {
+                                // Update local state
+                                const updatedSubtasks = localTask.subtasks.map(s => 
+                                  s.id === subtask.id ? { ...s, completed: !s.completed } : s
+                                );
+                                const updatedTask = { ...localTask, subtasks: updatedSubtasks };
+                                setLocalTask(updatedTask);
+                                
+                                // Notify parent to update the task list
+                                if (onTaskUpdate) {
+                                  onTaskUpdate(updatedTask);
+                                }
+                              }
+                            } catch (err) {
+                              console.error('Failed to toggle subtask:', err);
+                            }
+                          }}
+                          className="mt-1 w-4 h-4 accent-green-500 cursor-pointer"
                         />
-                        <div className="flex-1">
-                          <p className={subtask.completed ? "line-through text-gray-400" : ""}>
+                        <div className="flex-1 min-w-0">
+                          <p className={`${subtask.completed ? "line-through text-gray-400" : ""} break-words`}>
                             {subtask.title}
                           </p>
+                          
+                          {/* Subtask Schedule/Due Date */}
+                          {subDueDisplay && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <Clock size={12} className="text-gray-400" />
+                              <span className={`text-xs ${subDueDisplay === "TIME UP" ? "text-red-400 font-semibold" : "text-gray-400"}`}>
+                                {subDueDisplay}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {/* Assignees */}
                           {(subMainAssignee || subSupportingAssignees.length > 0) && (
-                            <div className="flex gap-2 mt-2">
+                            <div className="flex flex-wrap gap-1 mt-2">
                               {subMainAssignee && (
-                                <span className="text-xs px-2 py-1 bg-blue-600 rounded">
+                                <span className="text-xs px-2 py-0.5 bg-blue-600 rounded">
                                   {subMainAssignee.name}
                                 </span>
                               )}
                               {subSupportingAssignees.map((user) => (
-                                <span key={user.id} className="text-xs px-2 py-1 bg-gray-600 rounded">
+                                <span key={user.id} className="text-xs px-2 py-0.5 bg-gray-600 rounded">
                                   {user.name}
                                 </span>
                               ))}
                             </div>
                           )}
+                        </div>
+                        
+                        {/* Delete button */}
+                        <div className="flex gap-1 flex-shrink-0">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const API_BASE = `http://${window.location.hostname}:8080`;
+                                const response = await fetch(`${API_BASE}/tasks/${localTask.id}/subtasks/${subtask.id}`, {
+                                  method: 'DELETE'
+                                });
+                                
+                                if (response.ok) {
+                                  // Update local state by removing the subtask
+                                  const updatedSubtasks = localTask.subtasks.filter(s => s.id !== subtask.id);
+                                  const updatedTask = { ...localTask, subtasks: updatedSubtasks };
+                                  setLocalTask(updatedTask);
+                                  
+                                  // Notify parent to update the task list
+                                  if (onTaskUpdate) {
+                                    onTaskUpdate(updatedTask);
+                                  }
+                                }
+                              } catch (err) {
+                                console.error('Failed to delete subtask:', err);
+                              }
+                            }}
+                            className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                            title="Delete subtask"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -405,7 +538,7 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
 
           {/* Created Date */}
           <div className="text-xs text-gray-400">
-            Created: {new Date(task.createdAt).toLocaleString()}
+            Created: {new Date(localTask.createdAt).toLocaleString()}
           </div>
         </div>
       </DialogContent>
@@ -416,7 +549,7 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
       imageUrl={lightboxImage?.url}
       imageName={lightboxImage?.name}
       isOpen={!!lightboxImage}
-      onClose={() => setLightboxImage(null)}
+      onClose={handleLightboxClose}
     />
     </>
   );

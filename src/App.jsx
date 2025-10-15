@@ -426,6 +426,12 @@ function App() {
           window.dispatchEvent(new CustomEvent("openEditModal", { detail: { task } }));
         }}
         onDelete={handleDelete}
+        onTaskUpdate={(updatedTask) => {
+          // Update the task in the local state
+          setTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
+          // Update the viewed task so the modal reflects changes
+          setViewedTask(updatedTask);
+        }}
       />
     </div>
   );

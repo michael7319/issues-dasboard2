@@ -159,11 +159,24 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         Math.max(0, parseInt(cdHours || 0, 10)) * 3600 +
         Math.max(0, parseInt(cdMinutes || 0, 10)) * 60;
       if (totalSeconds <= 0) return { mode: "none", reset: resetPolicy };
+      
+      // Parse existing schedule to get original countdownStartAt when editing
+      let existingStartAt = null;
+      if (taskToEdit?.schedule) {
+        const existingSchedule = typeof taskToEdit.schedule === 'string' 
+          ? JSON.parse(taskToEdit.schedule) 
+          : taskToEdit.schedule;
+        if (existingSchedule?.mode === "countdown" && existingSchedule?.countdownStartAt) {
+          existingStartAt = existingSchedule.countdownStartAt;
+        }
+      }
+      
       return {
         mode: "countdown",
         reset: resetPolicy,
         countdownSeconds: totalSeconds,
-        countdownStartAt: new Date().toISOString(),
+        // Preserve original start time when editing, use new time when creating
+        countdownStartAt: existingStartAt || new Date().toISOString(),
       };
     }
 

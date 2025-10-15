@@ -5,15 +5,27 @@ import { X } from "lucide-react";
 export default function ImageLightbox({ imageUrl, imageName, isOpen, onClose }) {
   if (!isOpen) return null;
 
+  const handleBackgroundClick = (e) => {
+    // Only close if clicking directly on the background, not bubbled from children
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  const handleCloseClick = (e) => {
+    e.preventDefault();
+    onClose();
+  };
+
   // Render the lightbox at the root level using a portal
   return ReactDOM.createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-90 p-4"
-      onClick={onClose}
+      onClick={handleBackgroundClick}
       style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
     >
       <button
-        onClick={onClose}
+        onClick={handleCloseClick}
         className="absolute top-4 right-4 p-2 rounded-full bg-gray-800 hover:bg-gray-700 text-white transition-colors z-10"
         title="Close"
       >
