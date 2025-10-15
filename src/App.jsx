@@ -4,6 +4,8 @@ import TimeframeView from "./components/TimeframeView";
 import KanbanView from "./components/KanbanView";
 import TaskView from "./components/TaskView";
 import ArchivedTasks from "./components/ArchivedTasks";
+import TaskViewModal from "./components/TaskViewModal";
+import users from "./data/users";
 
 // Dynamic API base URL - uses current host for network access
 const API_BASE = `http://${window.location.hostname}:8080`;
@@ -43,6 +45,7 @@ function App() {
   const [theme, setTheme] = useState("light");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [viewedTask, setViewedTask] = useState(null);
 
   // Fetch tasks from backend on mount
   useEffect(() => {
@@ -58,7 +61,24 @@ function App() {
       }
       const data = await response.json();
       console.log("Fetched tasks:", data); // Debug log
-      setTasks(toCamelCase(data));
+      
+      // Fetch attachments for each task
+      const tasksWithAttachments = await Promise.all(
+        data.map(async (task) => {
+          try {
+            const attRes = await fetch(`${API_BASE}/tasks/${task.id}/attachments`);
+            if (attRes.ok) {
+              const attData = await attRes.json();
+              return { ...task, attachments: attData };
+            }
+          } catch (attErr) {
+            console.error(`Failed to fetch attachments for task ${task.id}:`, attErr);
+          }
+          return { ...task, attachments: [] };
+        })
+      );
+      
+      setTasks(toCamelCase(tasksWithAttachments));
     } catch (err) {
       console.error("Failed to fetch tasks:", err);
       setError(err.message);
@@ -112,6 +132,8 @@ function App() {
   const handleCreate = async (taskData) => {
     try {
       let bodyData = { ...taskData };
+      const attachments = bodyData.attachments || [];
+      delete bodyData.attachments; // Remove from task creation
       delete bodyData.id;
       if (bodyData.createdAt) delete bodyData.createdAt;
       if (bodyData.updatedAt) delete bodyData.updatedAt;
@@ -129,6 +151,30 @@ function App() {
       }
       const newTaskSnake = await response.json();
       const newTask = toCamelCase(newTaskSnake);
+      
+      // Add attachments if any
+      if (attachments.length > 0) {
+        for (const att of attachments) {
+          try {
+            await fetch(`${API_BASE}/tasks/${newTask.id}/attachments`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(toSnakeCase(att))
+            });
+          } catch (attErr) {
+            console.error("Failed to add attachment:", attErr);
+          }
+        }
+        // Fetch attachments for the new task
+        const attRes = await fetch(`${API_BASE}/tasks/${newTask.id}/attachments`);
+        if (attRes.ok) {
+          const attData = await attRes.json();
+          newTask.attachments = toCamelCase(attData);
+        }
+      } else {
+        newTask.attachments = [];
+      }
+      
       setTasks(prev => [newTask, ...prev]);
       
       // Dispatch event to notify sidebar to refresh recent tasks
@@ -145,7 +191,15 @@ function App() {
   // Edit task
   const handleEdit = async (taskId, updatedData) => {
     try {
-      const snakeData = toSnakeCase(updatedData);
+      const attachments = updatedData.attachments || [];
+      const existingTask = tasks.find(t => t.id === taskId);
+      const existingAttachments = existingTask?.attachments || [];
+      
+      // Separate attachments from task data
+      const taskUpdateData = { ...updatedData };
+      delete taskUpdateData.attachments;
+      
+      const snakeData = toSnakeCase(taskUpdateData);
       const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -156,6 +210,45 @@ function App() {
       }
       const updatedTaskSnake = await response.json();
       const updatedTask = toCamelCase(updatedTaskSnake);
+      
+      // Handle attachment changes
+      // Remove deleted attachments
+      for (const existingAtt of existingAttachments) {
+        const stillExists = attachments.find(att => att.id === existingAtt.id);
+        if (!stillExists && existingAtt.id) {
+          try {
+            await fetch(`${API_BASE}/tasks/${taskId}/attachments/${existingAtt.id}`, {
+              method: 'DELETE'
+            });
+          } catch (delErr) {
+            console.error("Failed to delete attachment:", delErr);
+          }
+        }
+      }
+      
+      // Add new attachments (those without an id)
+      for (const att of attachments) {
+        if (!att.id) {
+          try {
+            await fetch(`${API_BASE}/tasks/${taskId}/attachments`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(toSnakeCase(att))
+            });
+          } catch (attErr) {
+            console.error("Failed to add attachment:", attErr);
+          }
+        }
+      }
+      
+      // Fetch updated attachments
+      const attRes = await fetch(`${API_BASE}/tasks/${taskId}/attachments`);
+      if (attRes.ok) {
+        const attData = await attRes.json();
+        updatedTask.attachments = toCamelCase(attData);
+      } else {
+        updatedTask.attachments = [];
+      }
       
       // Preserve existing subtasks when updating main task
       setTasks(tasks.map((task) => {
@@ -188,12 +281,22 @@ function App() {
       }
       setTasks(tasks.filter((task) => task.id !== taskId));
       
+      // Close view modal if it's the task being deleted
+      if (viewedTask?.id === taskId) {
+        setViewedTask(null);
+      }
+      
       // Dispatch event to notify sidebar to refresh recent tasks
       window.dispatchEvent(new CustomEvent("taskDeleted"));
     } catch (err) {
       console.error("Failed to delete task:", err);
       setError(err.message);
     }
+  };
+
+  // Handle task click to open view modal
+  const handleTaskClick = (task) => {
+    setViewedTask(task);
   };
 
   // Archive/unarchive task
@@ -262,7 +365,8 @@ function App() {
             onCreate={handleCreate}
             onEdit={handleEdit} 
             onDelete={handleDelete} 
-            onArchive={handleArchive} 
+            onArchive={handleArchive}
+            onTaskClick={handleTaskClick}
           />
         ) : view === "timeframe" ? (
           <TimeframeView 
@@ -273,6 +377,7 @@ function App() {
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}
+            onTaskClick={handleTaskClick}
           />
         ) : view === "kanban" ? (
           <KanbanView 
@@ -282,6 +387,7 @@ function App() {
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}
+            onTaskClick={handleTaskClick}
           />
         ) : view === "archived" ? (
           <ArchivedTasks
@@ -289,6 +395,7 @@ function App() {
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}
+            onTaskClick={handleTaskClick}
           />
         ) : null}
       </main>
@@ -306,6 +413,20 @@ function App() {
       >
         {theme === "light" ? "🌞" : "🌙"}
       </button>
+
+      {/* Task View Modal */}
+      <TaskViewModal
+        task={viewedTask}
+        users={users}
+        isOpen={!!viewedTask}
+        onClose={() => setViewedTask(null)}
+        onEdit={(task) => {
+          setViewedTask(null);
+          // Dispatch custom event to notify view components to open edit modal
+          window.dispatchEvent(new CustomEvent("openEditModal", { detail: { task } }));
+        }}
+        onDelete={handleDelete}
+      />
     </div>
   );
 }

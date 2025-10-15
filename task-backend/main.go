@@ -42,6 +42,17 @@ type Subtask struct {
 	Schedule            *string `json:"schedule,omitempty" bson:"schedule,omitempty"`
 }
 
+type Attachment struct {
+	ID        int64     `bson:"id" json:"id"`
+	TaskID    int64     `json:"task_id" bson:"task_id"`
+	Type      string    `json:"type" bson:"type"` // "link", "document", "image"
+	Name      string    `json:"name" bson:"name"`
+	URL       string    `json:"url" bson:"url"`
+	Size      any       `json:"size,omitempty" bson:"size,omitempty"` // Can be int64 or string from DB
+	MimeType  *string   `json:"mime_type,omitempty" bson:"mime_type,omitempty"`
+	CreatedAt time.Time `json:"created_at" bson:"created_at"`
+}
+
 type User struct {
 	ID   int64  `bson:"id" json:"id"`
 	Name string `bson:"name" json:"name"`
@@ -137,7 +148,10 @@ func main() {
 
 	// GET /tasks
 	r.GET("/tasks", func(c *gin.Context) {
-		ctx := c.Request.Context()
+		// Use a fresh context with longer timeout to avoid cancellation
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		tasksColl := db.Collection("tasks")
 		subtasksColl := db.Collection("subtasks")
 		cur, err := tasksColl.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "pinned", Value: -1}, {Key: "created_at", Value: -1}}))
@@ -156,14 +170,15 @@ func main() {
 			subCur, err := subtasksColl.Find(ctx, bson.M{"task_id": tasks[i].ID})
 			if err != nil {
 				log.Println("subtasks Find error:", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
+				// Don't fail the whole request, just skip subtasks for this task
+				tasks[i].Subtasks = []Subtask{}
+				continue
 			}
 			var subs []Subtask
 			if err := subCur.All(ctx, &subs); err != nil {
 				log.Println("subtasks cursor.All error:", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
+				tasks[i].Subtasks = []Subtask{}
+				continue
 			}
 			tasks[i].Subtasks = subs
 		}
@@ -389,6 +404,88 @@ func main() {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "cleared"})
+	})
+
+	// GET /tasks/:id/attachments
+	r.GET("/tasks/:id/attachments", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		idStr := c.Param("id")
+		taskIDNum, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+			return
+		}
+		attachmentsColl := db.Collection("attachments")
+		cur, err := attachmentsColl.Find(ctx, bson.M{"task_id": taskIDNum}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+		if err != nil {
+			log.Println("attachments Find error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		var attachments []Attachment
+		if err := cur.All(ctx, &attachments); err != nil {
+			log.Println("attachments cursor.All error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, attachments)
+	})
+
+	// POST /tasks/:id/attachments
+	r.POST("/tasks/:id/attachments", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		idStr := c.Param("id")
+		taskIDNum, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+			return
+		}
+		var attachment Attachment
+		if err := c.BindJSON(&attachment); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		attachment.TaskID = taskIDNum
+		if attachment.CreatedAt.IsZero() {
+			attachment.CreatedAt = time.Now().UTC()
+		}
+		seq, err := getNextSeq(ctx, "attachmentid")
+		if err != nil {
+			log.Println("attachment seq error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate id"})
+			return
+		}
+		attachment.ID = seq
+		attachmentsColl := db.Collection("attachments")
+		if _, err := attachmentsColl.InsertOne(ctx, attachment); err != nil {
+			log.Println("attachments InsertOne error:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, attachment)
+	})
+
+	// DELETE /tasks/:id/attachments/:attachmentId
+	r.DELETE("/tasks/:id/attachments/:attachmentId", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		idStr := c.Param("id")
+		attachmentStr := c.Param("attachmentId")
+		taskIDNum, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+			return
+		}
+		attachmentIDNum, err := strconv.ParseInt(attachmentStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid attachment ID"})
+			return
+		}
+		attachmentsColl := db.Collection("attachments")
+		if _, err := attachmentsColl.DeleteOne(ctx, bson.M{"id": attachmentIDNum, "task_id": taskIDNum}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 	})
 
 	r.Run(":8080")

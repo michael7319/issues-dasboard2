@@ -3,7 +3,7 @@ import { useState } from "react";
 import TaskCard from "./TaskCard";
 import AddTaskModal from "./AddTaskModal";
 
-export default function ArchivedTasks({ tasks, onEdit, onDelete, onArchive }) {
+export default function ArchivedTasks({ tasks, onEdit, onDelete, onArchive, onTaskClick }) {
   // Remove modal state for editing
 
   const archivedTasks = tasks.filter((task) => task.archived);
@@ -24,6 +24,7 @@ export default function ArchivedTasks({ tasks, onEdit, onDelete, onArchive }) {
                 // Remove onEdit to disable editing
                 onDelete={onDelete}
                 onArchive={onArchive}
+                onTaskClick={onTaskClick}
               />
             </div>
           ))}

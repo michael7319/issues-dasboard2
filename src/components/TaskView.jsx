@@ -8,7 +8,7 @@ import users from "../data/users";
 // Dynamic API base URL - uses current host for network access
 const API_BASE = `http://${window.location.hostname}:8080`;
 
-export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive }) {
+export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive, onTaskClick }) {
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
 
   // Listen for highlightTask event from Sidebar
@@ -29,6 +29,18 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
     };
     window.addEventListener("highlightTask", handleHighlightTask);
     return () => window.removeEventListener("highlightTask", handleHighlightTask);
+  }, []);
+
+  // Listen for openEditModal event from TaskViewModal
+  useEffect(() => {
+    const handleOpenEditModal = (e) => {
+      if (e.detail?.task) {
+        setEditingTask(e.detail.task);
+        setIsModalOpen(true);
+      }
+    };
+    window.addEventListener("openEditModal", handleOpenEditModal);
+    return () => window.removeEventListener("openEditModal", handleOpenEditModal);
   }, []);
   // Support multi-select filters for priority and assignees
   const [priorityFilter, setPriorityFilter] = useState([]);
@@ -554,6 +566,7 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
                   onUpdateSubtask={handleUpdateSubtask}
                   onArchive={handleArchiveTask}
                   onPin={handlePinTask}
+                  onTaskClick={onTaskClick}
                 />
               </div>
             ))}

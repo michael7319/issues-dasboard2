@@ -8,7 +8,7 @@ import users from "../data/users";
 // Dynamic API base URL - uses current host for network access
 const API_BASE = `http://${window.location.hostname}:8080`;
 
-export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive }) {
+export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit, onDelete, onArchive, onTaskClick }) {
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
 
   // Listen for highlightTask event from Sidebar
@@ -30,6 +30,19 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
     window.addEventListener("highlightTask", handleHighlightTask);
     return () => window.removeEventListener("highlightTask", handleHighlightTask);
   }, []);
+
+  // Listen for openEditModal event from TaskViewModal
+  useEffect(() => {
+    const handleOpenEditModal = (e) => {
+      if (e.detail?.task) {
+        setEditingTask(e.detail.task);
+        setIsModalOpen(true);
+      }
+    };
+    window.addEventListener("openEditModal", handleOpenEditModal);
+    return () => window.removeEventListener("openEditModal", handleOpenEditModal);
+  }, []);
+
   const [selectedTimeframe, setSelectedTimeframe] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState([]);
   const [assigneeFilter, setAssigneeFilter] = useState([]);
@@ -527,6 +540,7 @@ export default function TimeframeView({ theme, tasks, setTasks, onCreate, onEdit
                       onDeleteSubtask={handleDeleteSubtask}
                       onUpdateSubtask={handleUpdateSubtask}
                       onArchive={handleArchiveTask}
+                      onTaskClick={onTaskClick}
                     />
                   </div>
                 ))}

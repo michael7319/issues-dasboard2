@@ -9,7 +9,7 @@ import TaskCard from "./TaskCard";
 // Dynamic API base URL - uses current host for network access
 const API_BASE = `http://${window.location.hostname}:8080`;
 
-export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, onArchive }) {
+export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, onArchive, onTaskClick }) {
   const [showSubtaskModal, setShowSubtaskModal] = useState(false);
   const [taskToSubtask, setTaskToSubtask] = useState(null);
   const [editingSubtask, setEditingSubtask] = useState(null);
@@ -21,6 +21,18 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
   const [loading, setLoading] = useState(false);
   const prevCompletedRef = useRef(null);
   const lastOverContainerRef = useRef(null);
+
+  // Listen for openEditModal event from TaskViewModal
+  useEffect(() => {
+    const handleOpenEditModal = (e) => {
+      if (e.detail?.task) {
+        setEditingTask(e.detail.task);
+        setIsModalOpen(true);
+      }
+    };
+    window.addEventListener("openEditModal", handleOpenEditModal);
+    return () => window.removeEventListener("openEditModal", handleOpenEditModal);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -700,6 +712,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
                               onDeleteSubtask={handleDeleteSubtask}
                               onUpdateSubtask={handleUpdateSubtask}
                               onArchive={handleArchiveTask}
+                              onTaskClick={onTaskClick}
                             />
                           ) : null
                         )}
@@ -727,6 +740,7 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
                               onDeleteSubtask={handleDeleteSubtask}
                               onUpdateSubtask={handleUpdateSubtask}
                               onArchive={handleArchiveTask}
+                              onTaskClick={onTaskClick}
                             />
                           ) : null
                         )}

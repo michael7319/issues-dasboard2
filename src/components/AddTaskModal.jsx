@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import users from "../data/users";
+import AttachmentManager from "./AttachmentManager";
 
 import {
   Dialog,
@@ -50,6 +51,9 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
   const [dueTime, setDueTime] = useState("");
   const [dueWeekday, setDueWeekday] = useState(1);
   const [dueDateAbs, setDueDateAbs] = useState("");
+
+  // Attachments state
+  const [attachments, setAttachments] = useState([]);
 
   // Form state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -116,6 +120,9 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       } else {
         setDueDateAbs("");
       }
+
+      // Load attachments if editing
+      setAttachments(taskToEdit.attachments || []);
     } else {
       // Reset form for new task
       setTitle("");
@@ -130,6 +137,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       setDueTime("");
       setDueWeekday(1);
       setDueDateAbs("");
+      setAttachments([]);
     }
     setError(null);
   }, [taskToEdit, open]);
@@ -191,6 +199,14 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
     return { mode: "none", reset: resetPolicy };
   };
 
+  const handleAddAttachment = (attachment) => {
+    setAttachments([...attachments, attachment]);
+  };
+
+  const handleRemoveAttachment = (idOrIndex) => {
+    setAttachments(attachments.filter((att, idx) => (att.id || idx) !== idOrIndex));
+  };
+
   const handleSubmit = async () => {
     if (!title.trim() || !mainAssignee) {
       setError("Title and main assignee are required");
@@ -213,6 +229,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         completed: taskToEdit?.completed || false,
         archived: taskToEdit?.archived || false,
         schedule: JSON.stringify(schedule), // Store as JSON string
+        attachments, // Include attachments
       };
 
       await onAdd(taskData);
@@ -479,6 +496,16 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
               />
             </div>
           )}
+        </div>
+
+        {/* Attachments */}
+        <div className="mb-3 text-sm">
+          <AttachmentManager
+            attachments={attachments}
+            onAdd={handleAddAttachment}
+            onRemove={handleRemoveAttachment}
+            disabled={isSubmitting}
+          />
         </div>
 
         <DialogFooter className="mt-2 flex justify-end gap-2">
