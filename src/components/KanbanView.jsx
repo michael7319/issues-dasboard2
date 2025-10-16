@@ -21,6 +21,10 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
   const [loading, setLoading] = useState(false);
   const prevCompletedRef = useRef(null);
   const lastOverContainerRef = useRef(null);
+  
+  // Undo functionality - store last 3 actions
+  const [undoHistory, setUndoHistory] = useState([]);
+  const MAX_UNDO_HISTORY = 3;
 
   // Listen for openEditModal event from TaskViewModal
   useEffect(() => {
@@ -230,6 +234,55 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
       console.error("Error updating subtask:", err);
       setError(err.message);
       throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Add action to undo history
+  const addToUndoHistory = (action) => {
+    setUndoHistory(prev => {
+      const newHistory = [action, ...prev].slice(0, MAX_UNDO_HISTORY);
+      return newHistory;
+    });
+  };
+
+  // Undo last action
+  const handleUndo = async () => {
+    if (undoHistory.length === 0) return;
+    
+    const lastAction = undoHistory[0];
+    const remainingHistory = undoHistory.slice(1);
+    
+    try {
+      setLoading(true);
+      
+      if (lastAction.type === 'MOVE_TASK') {
+        // Restore task to previous status and position
+        const task = tasks.find(t => t.id === lastAction.taskId);
+        if (task) {
+          const payload = buildTaskPayload({
+            ...task,
+            completed: lastAction.previousCompleted
+          });
+          await updateTask(lastAction.taskId, payload);
+          
+          setTasks(prev =>
+            prev.map(t =>
+              t.id === lastAction.taskId
+                ? { ...t, completed: lastAction.previousCompleted }
+                : t
+            )
+          );
+        }
+      }
+      
+      // Remove this action from history after successful undo
+      setUndoHistory(remainingHistory);
+      
+    } catch (err) {
+      console.error("Error undoing action:", err);
+      setError("Failed to undo action: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -529,6 +582,15 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
           const payload = buildTaskPayload(activeTaskNow, { completed: newCompleted });
           await updateTask(activeId, payload);
 
+          // Add to undo history
+          addToUndoHistory({
+            type: 'MOVE_TASK',
+            taskId: activeId,
+            previousCompleted: wasCompleted,
+            newCompleted: newCompleted,
+            timestamp: Date.now()
+          });
+
           // Update subtasks if needed
           if (activeTaskNow.subtasks && activeTaskNow.subtasks.length > 0) {
             const subtaskUpdatePromises = activeTaskNow.subtasks.map(subtask => {
@@ -654,6 +716,22 @@ export default function KanbanView({ theme, tasks, setTasks, onEdit, onDelete, o
 
   return (
     <div className={`flex flex-col p-4 ${theme === "light" ? "bg-gray-500" : "bg-gray-800"} rounded-lg shadow-lg ${loading ? 'opacity-75' : ''}`}>
+      {/* Undo Button */}
+      {undoHistory.length > 0 && (
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={loading}
+          className="fixed z-50 px-4 py-2 text-sm font-semibold text-white bg-orange-600 rounded-full shadow-lg bottom-24 right-6 hover:bg-orange-700 transition-all duration-300 disabled:opacity-50 flex items-center gap-2"
+          title={`Undo last ${undoHistory.length} action${undoHistory.length > 1 ? 's' : ''}`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+          </svg>
+          Undo ({undoHistory.length})
+        </button>
+      )}
+
       <button
         type="button"
         onClick={() => {

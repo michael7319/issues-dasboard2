@@ -59,6 +59,18 @@ export default function TaskView({ theme, tasks, setTasks, onCreate, onEdit, onD
     return () => window.removeEventListener("addTask", handleAddTaskEvent);
   }, []);
 
+  // Listen for openEditModal event from TaskViewModal
+  useEffect(() => {
+    const handleOpenEditModal = (e) => {
+      if (e.detail?.task) {
+        setEditingTask(e.detail.task);
+        setIsModalOpen(true);
+      }
+    };
+    window.addEventListener("openEditModal", handleOpenEditModal);
+    return () => window.removeEventListener("openEditModal", handleOpenEditModal);
+  }, []);
+
   // Build full backend-compatible subtask payload (snake_case + serialized strings)
   const buildSubtaskPayload = (subtask, overrides = {}) => {
     const mainAssigneeId =
