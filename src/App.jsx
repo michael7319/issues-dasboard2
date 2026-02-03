@@ -4,8 +4,11 @@ import TimeframeView from "./components/TimeframeView";
 import KanbanView from "./components/KanbanView";
 import TaskView from "./components/TaskView";
 import ArchivedTasks from "./components/ArchivedTasks";
+import TaskViewModal from "./components/TaskViewModal";
+import users from "./data/users";
 
-const API_BASE = "http://localhost:8080";
+// Dynamic API base URL - uses current host for network access
+const API_BASE = `http://${window.location.hostname}:8080`;
 
 const toSnakeCase = (obj) => {
   if (Array.isArray(obj)) {
@@ -39,14 +42,41 @@ function App() {
   const [view, setView] = useState("task");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [tasks, setTasks] = useState([]);
-  const [theme, setTheme] = useState("light");
+  const [theme, setTheme] = useState(() => {
+    // Load theme from localStorage, default to 'light'
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme || 'light';
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [viewedTask, setViewedTask] = useState(null);
+  
+  // PERFORMANCE: Cache for attachment URLs loaded on-demand
+  const [attachmentCache, setAttachmentCache] = useState(new Map());
+  const [loadingAttachments, setLoadingAttachments] = useState(new Set());
+
+  // Scroll to top when view changes
+  useEffect(() => {
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      // Scroll both window and the main content area
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      const mainElement = document.querySelector('main');
+      if (mainElement) {
+        mainElement.scrollTop = 0;
+      }
+    });
+  }, [view]);
 
   // Fetch tasks from backend on mount
   useEffect(() => {
     fetchTasks();
   }, []);
+
+  // Save theme to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   const fetchTasks = async () => {
     try {
@@ -56,14 +86,78 @@ function App() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
-      console.log("Fetched tasks:", data); // Debug log
-      setTasks(toCamelCase(data));
+      console.log("Fetched tasks:", data);
+      
+      // CRITICAL PERFORMANCE FIX: Strip large base64 URLs from attachments
+      // Keep attachment metadata for UI, but remove heavy data
+      const tasksWithLightAttachments = data.map(task => ({
+        ...task,
+        attachments: task.attachments ? task.attachments.map(att => ({
+          ...att,
+          url: att.url && att.url.length > 1000 ? '' : att.url // Strip base64, keep regular URLs
+        })) : []
+      }));
+      
+      setTasks(toCamelCase(tasksWithLightAttachments));
     } catch (err) {
       console.error("Failed to fetch tasks:", err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+  
+  // PERFORMANCE: Load attachments for a task on-demand with caching
+  const loadTaskAttachments = async (taskId) => {
+    const cacheKey = `task-${taskId}`;
+    
+    // Check cache first
+    if (attachmentCache.has(cacheKey)) {
+      const cached = attachmentCache.get(cacheKey);
+      // Update task with cached attachments
+      setTasks(prevTasks => 
+        prevTasks.map(t => 
+          t.id === taskId ? { ...t, attachments: cached } : t
+        )
+      );
+      return cached;
+    }
+    
+    // Prevent duplicate requests
+    if (loadingAttachments.has(taskId)) {
+      return [];
+    }
+    
+    setLoadingAttachments(prev => new Set(prev).add(taskId));
+    
+    try {
+      const response = await fetch(`${API_BASE}/tasks/${taskId}/attachments`);
+      if (response.ok) {
+        const attachments = await response.json();
+        const camelAttachments = toCamelCase(attachments);
+        
+        // Cache it
+        setAttachmentCache(prev => new Map(prev).set(cacheKey, camelAttachments));
+        
+        // Update the specific task with attachments
+        setTasks(prevTasks => 
+          prevTasks.map(t => 
+            t.id === taskId ? { ...t, attachments: camelAttachments } : t
+          )
+        );
+        
+        return camelAttachments;
+      }
+    } catch (err) {
+      console.error(`Failed to load attachments for task ${taskId}:`, err);
+    } finally {
+      setLoadingAttachments(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(taskId);
+        return newSet;
+      });
+    }
+    return [];
   };
 
   // Handle sidebar toggle for layout
@@ -111,6 +205,8 @@ function App() {
   const handleCreate = async (taskData) => {
     try {
       let bodyData = { ...taskData };
+      const attachments = bodyData.attachments || [];
+      delete bodyData.attachments; // Remove from task creation
       delete bodyData.id;
       if (bodyData.createdAt) delete bodyData.createdAt;
       if (bodyData.updatedAt) delete bodyData.updatedAt;
@@ -128,7 +224,35 @@ function App() {
       }
       const newTaskSnake = await response.json();
       const newTask = toCamelCase(newTaskSnake);
+      
+      // Add attachments if any
+      if (attachments.length > 0) {
+        for (const att of attachments) {
+          try {
+            await fetch(`${API_BASE}/tasks/${newTask.id}/attachments`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(toSnakeCase(att))
+            });
+          } catch (attErr) {
+            console.error("Failed to add attachment:", attErr);
+          }
+        }
+        // Fetch attachments for the new task
+        const attRes = await fetch(`${API_BASE}/tasks/${newTask.id}/attachments`);
+        if (attRes.ok) {
+          const attData = await attRes.json();
+          newTask.attachments = toCamelCase(attData);
+        }
+      } else {
+        newTask.attachments = [];
+      }
+      
       setTasks(prev => [newTask, ...prev]);
+      
+      // Dispatch event to notify sidebar to refresh recent tasks
+      window.dispatchEvent(new CustomEvent("taskAdded"));
+      
       return newTask;
     } catch (err) {
       console.error("Failed to create task:", err);
@@ -140,7 +264,15 @@ function App() {
   // Edit task
   const handleEdit = async (taskId, updatedData) => {
     try {
-      const snakeData = toSnakeCase(updatedData);
+      const attachments = updatedData.attachments || [];
+      const existingTask = tasks.find(t => t.id === taskId);
+      const existingAttachments = existingTask?.attachments || [];
+      
+      // Separate attachments from task data
+      const taskUpdateData = { ...updatedData };
+      delete taskUpdateData.attachments;
+      
+      const snakeData = toSnakeCase(taskUpdateData);
       const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -152,6 +284,45 @@ function App() {
       const updatedTaskSnake = await response.json();
       const updatedTask = toCamelCase(updatedTaskSnake);
       
+      // Handle attachment changes
+      // Remove deleted attachments
+      for (const existingAtt of existingAttachments) {
+        const stillExists = attachments.find(att => att.id === existingAtt.id);
+        if (!stillExists && existingAtt.id) {
+          try {
+            await fetch(`${API_BASE}/tasks/${taskId}/attachments/${existingAtt.id}`, {
+              method: 'DELETE'
+            });
+          } catch (delErr) {
+            console.error("Failed to delete attachment:", delErr);
+          }
+        }
+      }
+      
+      // Add new attachments (those without an id)
+      for (const att of attachments) {
+        if (!att.id) {
+          try {
+            await fetch(`${API_BASE}/tasks/${taskId}/attachments`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(toSnakeCase(att))
+            });
+          } catch (attErr) {
+            console.error("Failed to add attachment:", attErr);
+          }
+        }
+      }
+      
+      // Fetch updated attachments
+      const attRes = await fetch(`${API_BASE}/tasks/${taskId}/attachments`);
+      if (attRes.ok) {
+        const attData = await attRes.json();
+        updatedTask.attachments = toCamelCase(attData);
+      } else {
+        updatedTask.attachments = [];
+      }
+      
       // Preserve existing subtasks when updating main task
       setTasks(tasks.map((task) => {
         if (task.id === taskId) {
@@ -162,6 +333,10 @@ function App() {
         }
         return task;
       }));
+
+      // Dispatch event to notify sidebar to refresh recent tasks
+      window.dispatchEvent(new CustomEvent("taskUpdated"));
+      
       return updatedTask;
     } catch (err) {
       console.error("Failed to update task:", err);
@@ -178,9 +353,27 @@ function App() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       setTasks(tasks.filter((task) => task.id !== taskId));
+      
+      // Close view modal if it's the task being deleted
+      if (viewedTask?.id === taskId) {
+        setViewedTask(null);
+      }
+      
+      // Dispatch event to notify sidebar to refresh recent tasks
+      window.dispatchEvent(new CustomEvent("taskDeleted"));
     } catch (err) {
       console.error("Failed to delete task:", err);
       setError(err.message);
+    }
+  };
+
+  // Handle task click to open view modal
+  const handleTaskClick = async (task) => {
+    setViewedTask(task);
+    
+    // PERFORMANCE: Load attachments on-demand when task is opened
+    if (!task.attachments || task.attachments.length === 0) {
+      await loadTaskAttachments(task.id);
     }
   };
 
@@ -202,17 +395,14 @@ function App() {
       const dataSnake = await response.json();
       const data = toCamelCase(dataSnake);
       setTasks(tasks.map(t => t.id === taskId ? data : t));
+      
+      // Dispatch event to notify sidebar to refresh recent tasks
+      window.dispatchEvent(new CustomEvent("taskArchived"));
     } catch (err) {
       console.error("Failed to archive task:", err);
       setError(err.message);
     }
   };
-
-  // Get recent tasks (last 5, not archived, sorted by created_at)
-  const recentTasks = tasks
-    .filter((task) => !task.archived)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 5);
 
   if (loading) {
     return (
@@ -241,9 +431,9 @@ function App() {
 
   return (
     <div className={`flex min-h-screen ${theme === "light" ? "bg-white text-gray-800" : "bg-gray-950 text-gray-200"}`}>
-      <Sidebar currentView={view} setView={setView} recentTasks={recentTasks} theme={theme} />
+      <Sidebar currentView={view} setView={setView} theme={theme} />
       <main
-        className={`flex-grow p-6 overflow-y-auto transition-all duration-300 ${isSidebarCollapsed ? "ml-16" : "ml-64"} ${theme === "light" ? "bg-gray-100" : "bg-gray-900"}`}
+        className={`flex-grow p-3 sm:p-6 overflow-y-auto transition-all duration-300 ${isSidebarCollapsed ? "ml-16" : "ml-16 lg:ml-64"} ${theme === "light" ? "bg-gray-100" : "bg-gray-900"}`}
       >
         {view === "task" ? (
           <TaskView 
@@ -253,7 +443,9 @@ function App() {
             onCreate={handleCreate}
             onEdit={handleEdit} 
             onDelete={handleDelete} 
-            onArchive={handleArchive} 
+            onArchive={handleArchive}
+            onTaskClick={handleTaskClick}
+            onLoadAttachments={loadTaskAttachments}
           />
         ) : view === "timeframe" ? (
           <TimeframeView 
@@ -264,6 +456,7 @@ function App() {
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}
+            onTaskClick={handleTaskClick}
           />
         ) : view === "kanban" ? (
           <KanbanView 
@@ -273,13 +466,16 @@ function App() {
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}
+            onTaskClick={handleTaskClick}
           />
         ) : view === "archived" ? (
           <ArchivedTasks
+            theme={theme}
             tasks={tasks}
             onEdit={handleEdit}
             onDelete={handleDelete}
             onArchive={handleArchive}
+            onTaskClick={handleTaskClick}
           />
         ) : null}
       </main>
@@ -297,6 +493,26 @@ function App() {
       >
         {theme === "light" ? "🌞" : "🌙"}
       </button>
+
+      {/* Task View Modal */}
+      <TaskViewModal
+        task={viewedTask}
+        users={users}
+        isOpen={!!viewedTask}
+        onClose={() => setViewedTask(null)}
+        onEdit={(task) => {
+          setViewedTask(null);
+          // Dispatch custom event to notify view components to open edit modal
+          window.dispatchEvent(new CustomEvent("openEditModal", { detail: { task } }));
+        }}
+        onDelete={handleDelete}
+        onTaskUpdate={(updatedTask) => {
+          // Update the task in the local state
+          setTasks(tasks.map(t => t.id === updatedTask.id ? updatedTask : t));
+          // Update the viewed task so the modal reflects changes
+          setViewedTask(updatedTask);
+        }}
+      />
     </div>
   );
 }

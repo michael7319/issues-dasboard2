@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import users from "../data/users";
-import { Pencil, Trash2, Plus, Archive, Pin } from "lucide-react";
+import { Pencil, Trash2, Plus, Archive, Pin, Link as LinkIcon, FileText, Image as ImageIcon } from "lucide-react";
+import ImageLightbox from "./ImageLightbox";
 
 const priorityBorderColors = {
   High: "border-red-500 text-red-600",
@@ -57,6 +58,83 @@ const useCountdown = (item) => {
   const [expired, setExpired] = useState(false);
 
   useEffect(() => {
+    // Handle default_daily mode - countdown to 5pm deadline
+    if (item?.schedule?.mode === "default_daily") {
+      const update = () => {
+        const now = new Date();
+        const deadlineTime = item.schedule.deadlineTime || "17:00"; // Default to 5pm
+        const [hour, minute] = deadlineTime.split(":").map(Number);
+        const deadline = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+        
+        const diffMs = deadline - now;
+
+        if (diffMs <= 0) {
+          setTimeLeft("TIME UP");
+          setExpired(true);
+          return;
+        }
+
+        const totalSeconds = Math.floor(diffMs / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        setTimeLeft(
+          `${hours.toString().padStart(2, "0")}:${minutes
+            .toString()
+            .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+        );
+        setExpired(false);
+      };
+
+      update();
+      const interval = setInterval(update, 1000);
+      return () => clearInterval(interval);
+    }
+    
+    // Handle default_monthly mode - resets first of month
+    if (item?.schedule?.mode === "default_monthly") {
+      const update = () => {
+        const now = new Date();
+        const resetDay = item.schedule.resetDay || 1; // First day of month
+        const resetTime = item.schedule.resetTime || "08:00";
+        const [hour, minute] = resetTime.split(":").map(Number);
+        
+        // Calculate next reset date (first of next month at 8am)
+        let nextReset = new Date(now.getFullYear(), now.getMonth() + 1, resetDay, hour, minute, 0);
+        
+        const diffMs = nextReset - now;
+
+        if (diffMs <= 0) {
+          setTimeLeft("TIME UP");
+          setExpired(true);
+          return;
+        }
+
+        const totalSeconds = Math.floor(diffMs / 1000);
+        const days = Math.floor(totalSeconds / (24 * 3600));
+        const hours = Math.floor((totalSeconds % (24 * 3600)) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+        if (days > 0) {
+          setTimeLeft(`${days}d ${hours}h ${minutes}m`);
+        } else {
+          const seconds = totalSeconds % 60;
+          setTimeLeft(
+            `${hours.toString().padStart(2, "0")}:${minutes
+              .toString()
+              .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+          );
+        }
+        setExpired(false);
+      };
+
+      update();
+      const interval = setInterval(update, 1000);
+      return () => clearInterval(interval);
+    }
+    
+    // Handle countdown mode
     if (item?.schedule?.mode === "countdown" && item.schedule.countdownSeconds) {
       const start = new Date(item.schedule.countdownStartAt || new Date());
       const end = new Date(start.getTime() + item.schedule.countdownSeconds * 1000);
@@ -99,6 +177,16 @@ const useCountdown = (item) => {
 // Pure formatter (no hooks)
 const getDueDisplay = (item, countdownValue) => {
   if (!item) return "--:--";
+
+  // Default daily mode - show countdown to deadline
+  if (item.schedule?.mode === "default_daily") {
+    return countdownValue || "--:--";
+  }
+
+  // Default monthly mode - show countdown to next reset
+  if (item.schedule?.mode === "default_monthly") {
+    return countdownValue || "--:--";
+  }
 
   // Countdown mode
   if (item.schedule?.mode === "countdown") {
@@ -210,7 +298,7 @@ function SubtaskCard({
 
   return (
     <div
-      className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md cursor-pointer w-full max-w-[248px]"
+      className="relative p-2 text-[11px] bg-gray-800 border border-gray-600 rounded-md cursor-pointer w-full"
       onMouseEnter={() => setHoveredSubtaskId(sub.id)}
       onMouseLeave={() => setHoveredSubtaskId(null)}
       onClick={handleEditSubtask}
@@ -234,7 +322,7 @@ function SubtaskCard({
       </div>
 
       <div className="pt-4">
-        <div className="flex items-start gap-1 pr-3">
+        <div className="flex items-start gap-2 w-full">
           <input
             type="checkbox"
             checked={sub.completed}
@@ -243,9 +331,9 @@ function SubtaskCard({
             className="w-3 h-3 accent-green-500 cursor-pointer mt-0.5 flex-shrink-0"
           />
           <span 
-            className={`cursor-pointer break-words whitespace-pre-wrap overflow-hidden ${sub.completed ? "line-through text-gray-400" : ""}`}
+            className={`flex-1 cursor-pointer break-words whitespace-pre-wrap overflow-hidden min-w-0 ${sub.completed ? "line-through text-gray-400" : ""}`}
             onClick={handleSubtaskToggle}
-            style={{ wordBreak: 'break-word', maxWidth: 'calc(100% - 12px)' }}
+            style={{ wordBreak: 'break-word' }}
           >
             {sub.title}
           </span>
@@ -279,14 +367,45 @@ export default function TaskCard({
   onUpdateSubtask,
   onArchive,
   onPin,
+  onTaskClick,
+  onLoadAttachments,
 }) {
   const [isCompleted, setIsCompleted] = useState(task.completed || false);
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredSubtaskId, setHoveredSubtaskId] = useState(null);
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const cardRef = React.useRef(null);
 
   useEffect(() => {
     setIsCompleted(task.completed || false);
   }, [task.completed]);
+
+  // Automatically load attachments when card comes into view
+  useEffect(() => {
+    if (!cardRef.current || !onLoadAttachments) return;
+
+    const hasEmptyImageUrls = task.attachments?.some(
+      att => att.type === 'image' && att.id && (!att.url || att.url.trim() === '')
+    );
+
+    if (!hasEmptyImageUrls) return; // Already loaded
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            onLoadAttachments(task.id);
+            observer.disconnect(); // Load once
+          }
+        });
+      },
+      { rootMargin: '50px' } // Load slightly before coming into view
+    );
+
+    observer.observe(cardRef.current);
+
+    return () => observer.disconnect();
+  }, [task.id, task.attachments, onLoadAttachments]);
 
   // Parse assignees with proper field mapping - handle both camelCase and snake_case
   const mainAssigneeId = task.mainAssigneeId || task.mainAssignee || task.main_assignee_id;
@@ -306,6 +425,12 @@ export default function TaskCard({
   const handleToggle = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Don't allow toggling for archived tasks
+    if (task.archived) {
+      return;
+    }
+    
     const newStatus = !isCompleted;
     setIsCompleted(newStatus);
     onComplete(task.id, newStatus);
@@ -364,10 +489,12 @@ export default function TaskCard({
   };
 
   return (
-    <div
-      className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[260px] cursor-pointer"
-      onClick={() => onEdit(task)}
-    >
+    <>
+      <div
+        ref={cardRef}
+        className="p-1 space-y-1 text-white bg-gray-900 border border-gray-700 shadow-sm rounded-lg w-[250px] cursor-pointer"
+        onClick={() => onTaskClick && onTaskClick(task)}
+      >
       <div
         className="relative p-2 space-y-1 text-xs bg-gray-800 border border-gray-600 rounded-md"
         onMouseEnter={() => setIsHovered(true)}
@@ -409,6 +536,139 @@ export default function TaskCard({
             <div className="flex flex-wrap gap-1 p-1 rounded-md bg-gray-700/20">
               {main && renderUserTag(main, true)}
               {supporting.map((u) => renderUserTag(u))}
+            </div>
+          </div>
+        )}
+
+        {/* Attachments */}
+        {task.attachments && task.attachments.length > 0 && (
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              isHovered ? "max-h-96 mt-2 opacity-100" : "max-h-0 opacity-0"
+            }`}
+          >
+            <div className="space-y-2">
+              {/* Image thumbnails - only show loaded images (URL present) */}
+              {task.attachments.filter(att => att.type === 'image' && att.url && att.url.trim() !== '' && att.url.length > 100).length > 0 && (() => {
+                const imageAttachments = task.attachments.filter(att => att.type === 'image' && att.url && att.url.trim() !== '' && att.url.length > 100);
+                const hasMoreThanTwo = imageAttachments.length > 2;
+                
+                return (
+                  <div className={`flex flex-col gap-2 pr-1 ${hasMoreThanTwo ? 'max-h-[280px] overflow-y-auto custom-scrollbar-taskcard' : ''}`}>
+                    {imageAttachments.map((att, index) => {
+                      const key = att.id || `image-${index}`;
+                      return (
+                        <div
+                          key={key}
+                          className="block rounded overflow-hidden hover:opacity-80 transition-opacity cursor-pointer border border-gray-600 hover:border-purple-500 w-full flex-shrink-0"
+                          title={`View ${att.name || 'image'}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setLightboxImage({ url: att.url, name: att.name });
+                          }}
+                        >
+                          <img
+                            src={att.url}
+                            alt={att.name || 'attachment'}
+                            loading="lazy"
+                            className="w-full h-32 object-cover rounded"
+                            onError={(e) => {
+                              // If image fails to load, show placeholder
+                              e.target.style.display = 'none';
+                              e.target.parentElement.innerHTML = `<div class="h-32 w-full bg-gray-700 flex items-center justify-center text-purple-400"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></div>`;
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              
+              {/* Links and Documents - shown as badges */}
+              {task.attachments.filter(att => (att.type === "link" || att.type === "document") && att.url && att.url.trim() !== '').length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {task.attachments.map((att, index) => {
+                    const isUploadedFile = att.url && att.url.startsWith('data:');
+                    const hasValidUrl = att.url && att.url.trim() !== '';
+                    const key = att.id || `attachment-${index}`;
+
+                    // Skip images (already rendered above)
+                    if (att.type === "image") return null;
+
+                    const content = (
+                      <>
+                        {att.type === "document" && <FileText size={10} className="text-blue-400" />}
+                        {att.type === "link" && <LinkIcon size={10} className="text-green-400" />}
+                        <span className="max-w-[80px] truncate">{att.name || 'Unnamed'}</span>
+                      </>
+                    );
+
+                    // Links are always clickable if they have a valid URL
+                    if (att.type === "link" && hasValidUrl) {
+                      return (
+                        <a
+                          key={key}
+                          href={att.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] hover:bg-gray-500 transition-colors cursor-pointer"
+                          title={`${att.name || 'Link'} - ${att.url}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {content}
+                        </a>
+                      );
+                    }
+                    
+                    // Documents - can be downloaded or opened
+                    if (att.type === "document" && hasValidUrl) {
+                      if (isUploadedFile) {
+                        // Base64 document - download
+                        return (
+                          <a
+                            key={key}
+                            href={att.url}
+                            download={att.name || 'document'}
+                            className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] hover:bg-gray-500 transition-colors cursor-pointer"
+                            title={`Download ${att.name || 'document'}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {content}
+                          </a>
+                        );
+                      } else {
+                        // External document URL - open in new tab
+                        return (
+                          <a
+                            key={key}
+                            href={att.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] hover:bg-gray-500 transition-colors cursor-pointer"
+                            title={`${att.name || 'Document'} - ${att.url}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {content}
+                          </a>
+                        );
+                      }
+                    }
+                    
+                    // Fallback - just display as text (no URL available)
+                    return (
+                      <span
+                        key={key}
+                        className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] cursor-default"
+                        title={att.name || 'Attachment'}
+                      >
+                        {content}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -472,8 +732,18 @@ export default function TaskCard({
           onDeleteSubtask={onDeleteSubtask}
           onUpdateSubtask={onUpdateSubtask}
           parentId={task.id}
+          parentTask={task}
         />
       ))}
     </div>
+
+    {/* Image Lightbox - rendered outside card to prevent event interference */}
+    <ImageLightbox
+      imageUrl={lightboxImage?.url}
+      imageName={lightboxImage?.name}
+      isOpen={!!lightboxImage}
+      onClose={() => setLightboxImage(null)}
+    />
+    </>
   );
 }

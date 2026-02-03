@@ -11,10 +11,10 @@ import {
 import useLocalStorageTasks from "../hooks/use-tasks";
 import users from "../data/users";
 
-export default function Sidebar({ currentView, setView, recentTasks, theme }) {
+export default function Sidebar({ currentView, setView, theme }) {
 
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [localRecentTasks, setLocalRecentTasks] = useState([]);
+  const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 768);
+  const [recentTasks, setRecentTasks] = useState([]);
   const [localTheme, setLocalTheme] = useState(theme); // Local theme state
 
   // Sync local theme with prop
@@ -45,46 +45,58 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
     window.dispatchEvent(new CustomEvent("addTask"));
   }, []);
 
-  // Fetch recent tasks from backend
-  useEffect(() => {
-    async function fetchRecentTasks() {
-      try {
-        const res = await fetch("http://localhost:8080/tasks/recent");
-        if (res.ok) {
-          const data = await res.json();
-          setLocalRecentTasks(data);
-        }
-      } catch (err) {
-        // Optionally handle error
+  // Fetch recent tasks from backend - simplified version
+  const fetchRecentTasks = useCallback(async () => {
+    try {
+      const res = await fetch(`http://${window.location.hostname}:8080/tasks/recent`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecentTasks(Array.isArray(data) ? data : []);
+        console.log("Fetched recent tasks:", data);
       }
+    } catch (err) {
+      console.error("Failed to fetch recent tasks:", err);
+      setRecentTasks([]);
     }
-    fetchRecentTasks();
   }, []);
 
-  // Optionally, refetch recent tasks when a new task is added
+  // Initial fetch on mount
   useEffect(() => {
-    const handleTaskAdded = () => {
-      // Refetch recent tasks
-      fetch("http://localhost:8080/tasks/recent")
-        .then((res) => res.ok ? res.json() : [])
-        .then((data) => setLocalRecentTasks(data));
+    fetchRecentTasks();
+  }, [fetchRecentTasks]);
+
+  // Refetch when tasks are added or updated
+  useEffect(() => {
+    const handleTaskChange = () => {
+      // Add a small delay to ensure backend has processed the change
+      setTimeout(fetchRecentTasks, 200);
     };
-    window.addEventListener("taskAdded", handleTaskAdded);
-    return () => window.removeEventListener("taskAdded", handleTaskAdded);
-  }, []);
+
+    window.addEventListener("taskAdded", handleTaskChange);
+    window.addEventListener("taskUpdated", handleTaskChange);
+    window.addEventListener("taskDeleted", handleTaskChange);
+    window.addEventListener("taskArchived", handleTaskChange);
+    
+    return () => {
+      window.removeEventListener("taskAdded", handleTaskChange);
+      window.removeEventListener("taskUpdated", handleTaskChange);
+      window.removeEventListener("taskDeleted", handleTaskChange);
+      window.removeEventListener("taskArchived", handleTaskChange);
+    };
+  }, [fetchRecentTasks]);
 
   return (
     <aside
       key={localTheme}
-      className={`fixed top-0 left-0 h-full overflow-y-auto transition-all duration-300 ease-in-out ${
+      className={`fixed top-0 left-0 h-screen min-h-screen overflow-y-auto transition-all duration-300 ease-in-out ${
         isCollapsed ? "w-16" : "w-64"
-      } ${localTheme === "light" ? "bg-gradient-to-b from-gray-700 to-gray-800" : "bg-gradient-to-b from-blue-100 to-blue-200 bg-blue-200/80"} p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
+      } ${localTheme === "light" ? "bg-gradient-to-b from-gray-700 to-gray-800" : "bg-gradient-to-b from-blue-100 to-blue-200 bg-blue-200/80"} p-3 md:p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
       role="navigation"
       aria-label="Main navigation"
       style={{ scrollbarWidth: "none" }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-4 md:mb-8">
         {!isCollapsed && (
           <div className={`w-full text-center border-2 rounded-xl shadow-lg px-4 py-3 mb-2 transition-all duration-300
             ${localTheme === "light" 
@@ -102,7 +114,7 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
         )}
         <button
           onClick={toggleSidebar}
-          className="p-2 rounded-full hover:bg-blue-300/50 focus:outline-none focus:ring-2 focus:ring-sidebar-primary transition-colors duration-200"
+          className={`p-2 rounded-full bg-gray-300 hover:bg-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200 ${!isCollapsed ? 'ml-3' : ''}`}
           aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {isCollapsed ? (
@@ -116,7 +128,7 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
       {/* Add Task Button */}
       <button
         onClick={handleAddTask}
-        className={`w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-3 rounded-lg shadow-md transition-colors flex items-center justify-center gap-2 mb-8 overflow-visible`}
+        className={`w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 md:px-4 py-2 md:py-3 rounded-lg shadow-md transition-colors flex items-center justify-center gap-2 mb-4 md:mb-8 overflow-visible`}
         aria-label="Add new task"
       >
         <Plus
@@ -202,12 +214,11 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
               </svg>
               Recently Added
             </h3>
-            {localRecentTasks.length > 0 ? (
+            {recentTasks.length > 0 ? (
               <div
-                className="space-y-2 max-h-64 overflow-y-auto pr-2"
-                style={{ scrollbarWidth: "none" }} // Hide scrollbar for Firefox
+                className="space-y-2"
               >
-                {localRecentTasks.map((task) => (
+                {recentTasks.map((task) => (
                   <div
                     key={task.id}
                     className={`p-3 rounded-lg shadow-sm border-l-4 hover:shadow-md transition-shadow cursor-pointer
@@ -216,23 +227,23 @@ export default function Sidebar({ currentView, setView, recentTasks, theme }) {
                       window.dispatchEvent(new CustomEvent("highlightTask", { detail: { taskId: task.id } }));
                     }}
                   >
-                    <h4 className="font-medium text-gray-900 text-sm truncate">
+                    <h4 className="font-medium text-gray-900 text-sm truncate mb-2">
                       {task.title}
                     </h4>
-                    <div className="flex justify-between items-center mt-2">
+                    <div className="flex justify-between items-center gap-2 flex-nowrap">
                       <span
-                        className={`text-xs px-2 py-1 rounded-full ${
-                          task.priority === "High"
+                        className={`text-xs px-2 py-1 rounded-full whitespace-nowrap flex-shrink-0 ${
+                          (task?.priority || "") === "High"
                             ? "bg-red-100 text-red-800"
-                            : task.priority === "Medium"
+                            : (task?.priority || "") === "Medium"
                             ? "bg-yellow-100 text-yellow-800"
                             : "bg-green-100 text-green-800"
                         }`}
                       >
-                        {task.priority}
+                        {task?.priority || "None"}
                       </span>
-                      <span className="text-xs text-gray-500">
-                        {new Date(task.created_at).toLocaleDateString()}
+                      <span className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">
+                        {task?.created_at ? new Date(task.created_at).toLocaleDateString() : ""}
                       </span>
                     </div>
                   </div>

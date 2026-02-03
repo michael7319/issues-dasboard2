@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import users from "../data/users";
+import AttachmentManager from "./AttachmentManager";
 
 import {
   Dialog,
@@ -21,7 +22,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
-// Weekday list for "weekly" schedule
+// Weekday list for "monthly" schedule
 const WEEKDAYS = [
   { value: 1, label: "Mon" },
   { value: 2, label: "Tue" },
@@ -50,6 +51,10 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
   const [dueTime, setDueTime] = useState("");
   const [dueWeekday, setDueWeekday] = useState(1);
   const [dueDateAbs, setDueDateAbs] = useState("");
+  const [dailyDueDate, setDailyDueDate] = useState(""); // For daily default date picker
+
+  // Attachments state
+  const [attachments, setAttachments] = useState([]);
 
   // Form state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,7 +66,8 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       setTitle(taskToEdit.title || "");
       setDescription(taskToEdit.description || "");
       setPriority(taskToEdit.priority || "Medium");
-      setType(taskToEdit.type || "custom");
+      // Backwards compatibility: convert "weekly" to "monthly"
+      setType(taskToEdit.type === "weekly" ? "monthly" : taskToEdit.type || "custom");
       
       // Handle both field names for backwards compatibility
       const mainAssigneeValue = taskToEdit.mainAssigneeId || taskToEdit.mainAssignee || taskToEdit.main_assignee_id;
@@ -99,6 +105,17 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
 
       setMode(sch.mode || "none");
 
+      // Handle default_daily mode
+      if (sch.mode === "default_daily") {
+        setMode("default");
+        setDailyDueDate(sch.dueDate || "");
+      }
+
+      // Handle default_monthly mode
+      if (sch.mode === "default_monthly") {
+        setMode("default");
+      }
+
       const total = sch.countdownSeconds ?? 0;
       setCdHours(Math.floor(total / 3600));
       setCdMinutes(Math.floor((total % 3600) / 60));
@@ -116,6 +133,9 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       } else {
         setDueDateAbs("");
       }
+
+      // Load attachments if editing
+      setAttachments(taskToEdit.attachments || []);
     } else {
       // Reset form for new task
       setTitle("");
@@ -130,9 +150,18 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       setDueTime("");
       setDueWeekday(1);
       setDueDateAbs("");
+      setDailyDueDate("");
+      setAttachments([]);
     }
     setError(null);
   }, [taskToEdit, open]);
+
+  // Auto-set mode to "default" when type changes to "daily" or "monthly"
+  useEffect(() => {
+    if ((type === "daily" || type === "monthly") && mode === "none") {
+      setMode("default");
+    }
+  }, [type, mode]);
 
   const toggleSupporting = (id) => {
     setSupportingAssignees((prev) =>
@@ -141,27 +170,69 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
   };
 
   const resetPolicy =
-    type === "daily" ? "daily" : type === "weekly" ? "weekly" : "none";
+    type === "daily" ? "daily" : type === "monthly" ? "monthly" : "none";
 
   const buildSchedule = () => {
     if (mode === "none") return { mode: "none", reset: resetPolicy };
+
+    // Default mode for daily tasks - automatic daily reset at 8am, 5pm deadline
+    if (mode === "default" && type === "daily") {
+      return {
+        mode: "default_daily",
+        reset: "daily",
+        resetTime: "08:00",
+        deadlineTime: "17:00",
+      };
+    }
+
+    // Default mode for monthly tasks - resets first of month at 8am
+    if (mode === "default" && type === "monthly") {
+      return {
+        mode: "default_monthly",
+        reset: "monthly",
+        resetTime: "08:00",
+        resetDay: 1, // First day of month
+      };
+    }
 
     if (mode === "countdown") {
       const totalSeconds =
         Math.max(0, parseInt(cdHours || 0, 10)) * 3600 +
         Math.max(0, parseInt(cdMinutes || 0, 10)) * 60;
       if (totalSeconds <= 0) return { mode: "none", reset: resetPolicy };
+      
+      // Parse existing schedule to get original countdownStartAt when editing
+      let existingStartAt = null;
+      if (taskToEdit?.schedule) {
+        const existingSchedule = typeof taskToEdit.schedule === 'string' 
+          ? JSON.parse(taskToEdit.schedule) 
+          : taskToEdit.schedule;
+        if (existingSchedule?.mode === "countdown" && existingSchedule?.countdownStartAt) {
+          existingStartAt = existingSchedule.countdownStartAt;
+        }
+      }
+      
       return {
         mode: "countdown",
         reset: resetPolicy,
         countdownSeconds: totalSeconds,
-        countdownStartAt: new Date().toISOString(),
+        // Preserve original start time when editing, use new time when creating
+        countdownStartAt: existingStartAt || new Date().toISOString(),
       };
     }
 
-    // N-day repeat logic
+    // N-day repeat logic and daily due date
     if (isRecurring && dueDateAbs) {
-      // If time is set, repeat every N days at that time
+      // For daily tasks with due date mode, use the date directly
+      if (type === "daily") {
+        return {
+          mode: "due",
+          reset: "none",
+          dueAt: dueDateAbs, // YYYY-MM-DD format
+        };
+      }
+      
+      // For monthly tasks
       if (dueTime) {
         return {
           mode: "due",
@@ -191,6 +262,14 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
     return { mode: "none", reset: resetPolicy };
   };
 
+  const handleAddAttachment = (attachment) => {
+    setAttachments([...attachments, attachment]);
+  };
+
+  const handleRemoveAttachment = (idOrIndex) => {
+    setAttachments(attachments.filter((att, idx) => (att.id || idx) !== idOrIndex));
+  };
+
   const handleSubmit = async () => {
     if (!title.trim() || !mainAssignee) {
       setError("Title and main assignee are required");
@@ -213,6 +292,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         completed: taskToEdit?.completed || false,
         archived: taskToEdit?.archived || false,
         schedule: JSON.stringify(schedule), // Store as JSON string
+        attachments, // Include attachments
       };
 
       await onAdd(taskData);
@@ -225,7 +305,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
     }
   };
 
-  const isRecurring = type === "daily" || type === "weekly";
+  const isRecurring = type === "daily" || type === "monthly";
   const showCountdownInputs = mode === "countdown";
   const showDueTimeRecurring = isRecurring && mode === "due";
   const showAbsDue = !isRecurring && mode === "due";
@@ -308,7 +388,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="daily">🕒 Daily</SelectItem>
-                <SelectItem value="weekly">🗓️ Weekly</SelectItem>
+                <SelectItem value="monthly">🗓️ Monthly</SelectItem>
                 <SelectItem value="project">🛠️ Project</SelectItem>
                 <SelectItem value="custom">✏️ Custom</SelectItem>
               </SelectContent>
@@ -367,11 +447,11 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
             <label className="flex items-center gap-1 text-xs">
               <input
                 type="radio"
-                checked={mode === "none"}
-                onChange={() => setMode("none")}
+                checked={mode === "none" || ((type === "daily" || type === "monthly") && mode === "default")}
+                onChange={() => setMode((type === "daily" || type === "monthly") ? "default" : "none")}
                 disabled={isSubmitting}
               />
-              None
+              {(type === "daily" || type === "monthly") ? "Default" : "None"}
             </label>
             <label className="flex items-center gap-1 text-xs">
               <input
@@ -389,7 +469,7 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
                 onChange={() => setMode("due")}
                 disabled={isSubmitting}
               />
-              {type === "daily" || type === "weekly" ? "Due time" : "Due date"}
+              {type === "daily" || type === "monthly" ? "Due date" : "Due date"}
             </label>
           </div>
 
@@ -429,41 +509,33 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
             </div>
           )}
 
-          {/* Daily/Weekly due time */}
+          {/* Daily/Monthly due date */}
           {isRecurring && mode === "due" && (
-            <div className={`grid grid-cols-2 gap-2 ${showDueTimeRecurring ? "" : "opacity-50"}`}>
-              {type === "weekly" ? (
+            <div className={`grid grid-cols-${type === 'daily' ? '1' : '1'} gap-2 ${showDueTimeRecurring ? "" : "opacity-50"}`}>
+              {type === "monthly" ? (
                 <select
                   disabled={!showDueTimeRecurring || isSubmitting}
                   value={dueDateAbs}
                   onChange={(e) => setDueDateAbs(e.target.value)}
                   className="p-1 text-sm border rounded text-black"
                 >
-                  <option value="">Select weeks</option>
-                  {[1,2,3,4].map((w) => (
-                    <option key={w} value={w}>{w} week{w > 1 ? 's' : ''}</option>
+                  <option value="">Select months</option>
+                  {[1,2,3,4,5,6].map((m) => (
+                    <option key={m} value={m}>{m} month{m > 1 ? 's' : ''}</option>
                   ))}
                 </select>
               ) : (
-                <select
+                <Input
+                  type="date"
                   disabled={!showDueTimeRecurring || isSubmitting}
                   value={dueDateAbs}
                   onChange={(e) => setDueDateAbs(e.target.value)}
-                  className="p-1 text-sm border rounded text-black"
-                >
-                  <option value="">Select days</option>
-                  {[1,2,3,4,5,6].map((d) => (
-                    <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
-                  ))}
-                </select>
+                  min={new Date().toISOString().split('T')[0]}
+                  max={new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                  className="p-1 text-sm"
+                  placeholder="Select date (up to 6 days)"
+                />
               )}
-              <Input
-                type="time"
-                disabled={!showDueTimeRecurring || isSubmitting}
-                value={dueTime}
-                onChange={(e) => setDueTime(e.target.value)}
-                className="p-1 text-sm"
-              />
             </div>
           )}
 
@@ -479,6 +551,16 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
               />
             </div>
           )}
+        </div>
+
+        {/* Attachments */}
+        <div className="mb-3 text-sm">
+          <AttachmentManager
+            attachments={attachments}
+            onAdd={handleAddAttachment}
+            onRemove={handleRemoveAttachment}
+            disabled={isSubmitting}
+          />
         </div>
 
         <DialogFooter className="mt-2 flex justify-end gap-2">

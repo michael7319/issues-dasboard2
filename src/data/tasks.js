@@ -18,7 +18,7 @@ const tasks = [
 		id: 2,
 		title: "Update dashboard layout",
 		description: "Redesign layout for better responsiveness.",
-		type: "weekly",
+		type: "monthly",
 		priority: "Medium",
 		status: "In Progress",
 		mainAssignee: 4,

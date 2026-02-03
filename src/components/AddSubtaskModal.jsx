@@ -373,7 +373,7 @@ export default function AddSubtaskModal({
             </div>
           )}
 
-          {/* Due Date + Weekly Repeat */}
+          {/* Due Date + Monthly Repeat */}
           {showDueInputs && (
             <div>
               <Label htmlFor="dueAt" className="text-xs block mb-1">
