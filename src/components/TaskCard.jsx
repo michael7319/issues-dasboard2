@@ -56,6 +56,7 @@ const parseAssignees = (assignees) => {
 const useCountdown = (item) => {
   const [timeLeft, setTimeLeft] = useState("--:--");
   const [expired, setExpired] = useState(false);
+  const [percentRemaining, setPercentRemaining] = useState(100);
 
   useEffect(() => {
     // Handle default_daily mode - countdown to 5pm deadline
@@ -63,16 +64,25 @@ const useCountdown = (item) => {
       const update = () => {
         const now = new Date();
         const deadlineTime = item.schedule.deadlineTime || "17:00"; // Default to 5pm
-        const [hour, minute] = deadlineTime.split(":").map(Number);
-        const deadline = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+        const resetTime = item.schedule.resetTime || "08:00"; // Default to 8am
+        const [deadlineHour, deadlineMinute] = deadlineTime.split(":").map(Number);
+        const [resetHour, resetMinute] = resetTime.split(":").map(Number);
+        
+        const deadline = new Date(now.getFullYear(), now.getMonth(), now.getDate(), deadlineHour, deadlineMinute, 0);
+        const reset = new Date(now.getFullYear(), now.getMonth(), now.getDate(), resetHour, resetMinute, 0);
         
         const diffMs = deadline - now;
+        const totalDuration = deadline - reset;
 
         if (diffMs <= 0) {
           setTimeLeft("TIME UP");
           setExpired(true);
+          setPercentRemaining(0);
           return;
         }
+
+        const percent = totalDuration > 0 ? Math.max(0, Math.min(100, (diffMs / totalDuration) * 100)) : 100;
+        setPercentRemaining(percent);
 
         const totalSeconds = Math.floor(diffMs / 1000);
         const hours = Math.floor(totalSeconds / 3600);
@@ -100,16 +110,22 @@ const useCountdown = (item) => {
         const resetTime = item.schedule.resetTime || "08:00";
         const [hour, minute] = resetTime.split(":").map(Number);
         
-        // Calculate next reset date (first of next month at 8am)
+        // Calculate current reset (first of this month) and next reset
+        const currentReset = new Date(now.getFullYear(), now.getMonth(), resetDay, hour, minute, 0);
         let nextReset = new Date(now.getFullYear(), now.getMonth() + 1, resetDay, hour, minute, 0);
         
         const diffMs = nextReset - now;
+        const totalDuration = nextReset - currentReset;
 
         if (diffMs <= 0) {
           setTimeLeft("TIME UP");
           setExpired(true);
+          setPercentRemaining(0);
           return;
         }
+
+        const percent = totalDuration > 0 ? Math.max(0, Math.min(100, (diffMs / totalDuration) * 100)) : 100;
+        setPercentRemaining(percent);
 
         const totalSeconds = Math.floor(diffMs / 1000);
         const days = Math.floor(totalSeconds / (24 * 3600));
@@ -138,6 +154,7 @@ const useCountdown = (item) => {
     if (item?.schedule?.mode === "countdown" && item.schedule.countdownSeconds) {
       const start = new Date(item.schedule.countdownStartAt || new Date());
       const end = new Date(start.getTime() + item.schedule.countdownSeconds * 1000);
+      const totalDuration = item.schedule.countdownSeconds * 1000;
 
       const update = () => {
         const now = new Date();
@@ -146,8 +163,12 @@ const useCountdown = (item) => {
         if (diffMs <= 0) {
           setTimeLeft("TIME UP");
           setExpired(true);
+          setPercentRemaining(0);
           return;
         }
+
+        const percent = totalDuration > 0 ? Math.max(0, Math.min(100, (diffMs / totalDuration) * 100)) : 100;
+        setPercentRemaining(percent);
 
         const totalSeconds = Math.floor(diffMs / 1000);
         const hours = Math.floor(totalSeconds / 3600);
@@ -168,10 +189,11 @@ const useCountdown = (item) => {
     } else {
       setTimeLeft("--:--");
       setExpired(false);
+      setPercentRemaining(100);
     }
   }, [item]);
 
-  return { timeLeft, expired };
+  return { timeLeft, expired, percentRemaining };
 };
 
 // Pure formatter (no hooks)
@@ -231,6 +253,14 @@ const getDueDisplay = (item, countdownValue) => {
   return "--:--";
 };
 
+// Get color based on time remaining percentage
+const getTimeColor = (percentRemaining, expired) => {
+  if (expired) return "text-red-500";
+  if (percentRemaining <= 29) return "text-red-500";
+  if (percentRemaining <= 69) return "text-yellow-500";
+  return "text-white"; // 70-100%
+};
+
 // Isolated Subtask component so we can use hooks safely
 function SubtaskCard({
   sub,
@@ -247,7 +277,7 @@ function SubtaskCard({
   // Parse subtask schedule
   const subtaskSchedule = parseSchedule(sub.schedule);
   const subtaskWithSchedule = { ...sub, schedule: subtaskSchedule };
-  const { timeLeft, expired } = useCountdown(subtaskWithSchedule);
+  const { timeLeft, expired, percentRemaining } = useCountdown(subtaskWithSchedule);
   const subDueDisplay = getDueDisplay(subtaskWithSchedule, timeLeft);
 
   // Parse assignees with proper field mapping
@@ -305,9 +335,7 @@ function SubtaskCard({
     >
       <div className="absolute flex justify-between items-center top-1 left-1 right-1 z-30">
         <span
-          className={`text-[9px] ${
-            subDueDisplay === "TIME UP" || expired ? "text-red-500" : "text-white"
-          }`}
+          className={`text-[9px] ${getTimeColor(percentRemaining, expired)}`}
         >
           {subDueDisplay}
         </span>
@@ -419,7 +447,7 @@ export default function TaskCard({
   // Parse task schedule
   const taskSchedule = parseSchedule(task.schedule);
   const taskWithSchedule = { ...task, schedule: taskSchedule };
-  const { timeLeft, expired } = useCountdown(taskWithSchedule);
+  const { timeLeft, expired, percentRemaining } = useCountdown(taskWithSchedule);
   const dueDisplay = getDueDisplay(taskWithSchedule, timeLeft);
 
   const handleToggle = (e) => {
@@ -684,9 +712,7 @@ export default function TaskCard({
             {task.priority}
           </span>
           <span
-            className={`text-[9px] ${
-              dueDisplay === "TIME UP" || expired ? "text-red-500" : "text-white"
-            }`}
+            className={`text-[9px] ${getTimeColor(percentRemaining, expired)}`}
           >
             {dueDisplay}
           </span>
