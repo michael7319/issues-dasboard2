@@ -1,7 +1,7 @@
 const users = [
   { id: 1, fullName: "Mr. Adekunle", initials: "MA" },
   { id: 2, fullName: "Mr. Emmanuel", initials: "ME" },
-  { id: 3, fullName: "Hakeem", initials: "HK" },
+  { id: 3, fullName: "Tobi", initials: "TO" },
   { id: 4, fullName: "Racheal", initials: "RA" },
   { id: 5, fullName: "Ivie", initials: "IV" },
   { id: 6, fullName: "Emmanuel", initials: "EM" },
