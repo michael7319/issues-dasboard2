@@ -185,13 +185,23 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
       };
     }
 
-    // Default mode for monthly tasks - resets first of month at 8am
+    // Default mode for monthly tasks - 30-day rolling cycle anchored to startedAt
     if (mode === "default" && type === "monthly") {
+      // Preserve the original cycle start if switching back to default on an edit
+      let existingStartedAt = null;
+      if (taskToEdit?.schedule) {
+        const existingSchedule = typeof taskToEdit.schedule === 'string'
+          ? JSON.parse(taskToEdit.schedule)
+          : taskToEdit.schedule;
+        if (existingSchedule?.mode === "default_monthly" && existingSchedule?.startedAt) {
+          existingStartedAt = existingSchedule.startedAt;
+        }
+      }
       return {
         mode: "default_monthly",
         reset: "monthly",
-        resetTime: "08:00",
-        resetDay: 1, // First day of month
+        defaultDays: 30,
+        startedAt: existingStartedAt || new Date().toISOString(),
       };
     }
 
@@ -207,9 +217,13 @@ export default function AddTaskModal({ open, onClose, onAdd, taskToEdit }) {
         const existingSchedule = typeof taskToEdit.schedule === 'string' 
           ? JSON.parse(taskToEdit.schedule) 
           : taskToEdit.schedule;
-        if (existingSchedule?.mode === "countdown" && existingSchedule?.countdownStartAt) {
-          existingStartAt = existingSchedule.countdownStartAt;
-        }
+      // Preserve the original start time only when the duration is unchanged — 
+      // if the user changed the duration, reset the clock from now
+      if (existingSchedule?.mode === "countdown" &&
+          existingSchedule?.countdownStartAt &&
+          existingSchedule?.countdownSeconds === totalSeconds) {
+        existingStartAt = existingSchedule.countdownStartAt;
+      }
       }
       
       return {

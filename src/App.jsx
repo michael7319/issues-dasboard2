@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import TimeframeView from "./components/TimeframeView";
 import KanbanView from "./components/KanbanView";
@@ -51,9 +51,9 @@ function App() {
   const [error, setError] = useState(null);
   const [viewedTask, setViewedTask] = useState(null);
   
-  // PERFORMANCE: Cache for attachment URLs loaded on-demand
-  const [attachmentCache, setAttachmentCache] = useState(new Map());
-  const [loadingAttachments, setLoadingAttachments] = useState(new Set());
+  // PERFORMANCE: Cache for attachment URLs loaded on-demand (refs = stable, no re-render needed)
+  const attachmentCacheRef = useRef(new Map());
+  const loadingAttachmentsRef = useRef(new Set());
 
   // Scroll to top when view changes
   useEffect(() => {
@@ -67,6 +67,31 @@ function App() {
       }
     });
   }, [view]);
+
+  const [fallbackAlerts, setFallbackAlerts] = useState([]);
+
+  useEffect(() => {
+    const handleFallbackAlert = (event) => {
+      const items = event?.detail?.items || [];
+      if (!Array.isArray(items) || items.length === 0) return;
+
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const taskId = items.length === 1 ? items[0].id : null;
+      const message =
+        items.length > 1
+          ? `${items.length} tasks are nearing their deadline.`
+          : `"${items[0].title}" is nearing its deadline.`;
+
+      setFallbackAlerts((prev) => [...prev, { id, message, taskId }]);
+
+      setTimeout(() => {
+        setFallbackAlerts((prev) => prev.filter((alert) => alert.id !== id));
+      }, 60000);
+    };
+
+    window.addEventListener("taskNotificationFallback", handleFallbackAlert);
+    return () => window.removeEventListener("taskNotificationFallback", handleFallbackAlert);
+  }, []);
 
   // Fetch tasks from backend on mount
   useEffect(() => {
@@ -108,57 +133,41 @@ function App() {
   };
   
   // PERFORMANCE: Load attachments for a task on-demand with caching
-  const loadTaskAttachments = async (taskId) => {
+  // useCallback with stable deps so TaskCard's useEffect doesn't loop
+  const loadTaskAttachments = useCallback(async (taskId) => {
     const cacheKey = `task-${taskId}`;
     
     // Check cache first
-    if (attachmentCache.has(cacheKey)) {
-      const cached = attachmentCache.get(cacheKey);
-      // Update task with cached attachments
-      setTasks(prevTasks => 
-        prevTasks.map(t => 
-          t.id === taskId ? { ...t, attachments: cached } : t
-        )
+    if (attachmentCacheRef.current.has(cacheKey)) {
+      const cached = attachmentCacheRef.current.get(cacheKey);
+      setTasks(prevTasks =>
+        prevTasks.map(t => t.id === taskId ? { ...t, attachments: cached } : t)
       );
       return cached;
     }
     
     // Prevent duplicate requests
-    if (loadingAttachments.has(taskId)) {
-      return [];
-    }
-    
-    setLoadingAttachments(prev => new Set(prev).add(taskId));
+    if (loadingAttachmentsRef.current.has(taskId)) return [];
+    loadingAttachmentsRef.current.add(taskId);
     
     try {
       const response = await fetch(`${API_BASE}/tasks/${taskId}/attachments`);
       if (response.ok) {
         const attachments = await response.json();
         const camelAttachments = toCamelCase(attachments);
-        
-        // Cache it
-        setAttachmentCache(prev => new Map(prev).set(cacheKey, camelAttachments));
-        
-        // Update the specific task with attachments
-        setTasks(prevTasks => 
-          prevTasks.map(t => 
-            t.id === taskId ? { ...t, attachments: camelAttachments } : t
-          )
+        attachmentCacheRef.current.set(cacheKey, camelAttachments);
+        setTasks(prevTasks =>
+          prevTasks.map(t => t.id === taskId ? { ...t, attachments: camelAttachments } : t)
         );
-        
         return camelAttachments;
       }
     } catch (err) {
       console.error(`Failed to load attachments for task ${taskId}:`, err);
     } finally {
-      setLoadingAttachments(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(taskId);
-        return newSet;
-      });
+      loadingAttachmentsRef.current.delete(taskId);
     }
     return [];
-  };
+  }, [setTasks]);
 
   // Handle sidebar toggle for layout
   useEffect(() => {
@@ -199,6 +208,13 @@ function App() {
 
   const toggleTheme = () => {
     setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
+  };
+
+  const navigateToTask = (taskId) => {
+    setView("task");
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("highlightTask", { detail: { taskId } }));
+    }, 100);
   };
 
   // Create task
@@ -493,6 +509,37 @@ function App() {
       >
         {theme === "light" ? "🌞" : "🌙"}
       </button>
+
+      {fallbackAlerts.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-[80] flex flex-col gap-2 max-w-sm">
+          {fallbackAlerts.map((alert) => (
+            <div
+              key={alert.id}
+              className="rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 text-sm text-amber-900 shadow-lg"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div
+                  className={alert.taskId ? "cursor-pointer hover:underline" : ""}
+                  onClick={() => alert.taskId && navigateToTask(alert.taskId)}
+                >
+                  <p className="font-semibold">⏰ Task ending soon</p>
+                  <p>
+                    {alert.message}
+                    {alert.taskId && <span className="ml-1 text-amber-700 text-xs">→ Go to task</span>}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setFallbackAlerts((prev) => prev.filter((a) => a.id !== alert.id))}
+                  className="shrink-0 text-amber-700 hover:text-amber-900 font-bold text-base leading-none"
+                  aria-label="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Task View Modal */}
       <TaskViewModal

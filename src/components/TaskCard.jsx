@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import users from "../data/users";
 import { Pencil, Trash2, Plus, Archive, Pin, Link as LinkIcon, FileText, Image as ImageIcon } from "lucide-react";
 import ImageLightbox from "./ImageLightbox";
@@ -52,11 +52,58 @@ const parseAssignees = (assignees) => {
   return [];
 };
 
+// Fire a browser notification if permission is granted
+// Batch accumulator — collects items (id+title) across all cards within a tick
+const _pendingItems = new Map(); // taskId -> title
+let _notifyTimer = null;
+
+const emitFallbackAlert = (items) => {
+  window.dispatchEvent(
+    new CustomEvent("taskNotificationFallback", {
+      detail: { items },
+    })
+  );
+};
+
+const _sendBatch = () => {
+  const items = [..._pendingItems.entries()].map(([id, title]) => ({ id, title }));
+  _pendingItems.clear();
+  _notifyTimer = null;
+  if (items.length === 0) return;
+  const titles = items.map((i) => i.title);
+
+  if (!("Notification" in window) || Notification.permission !== "granted") {
+    emitFallbackAlert(items);
+    return;
+  }
+
+  try {
+    new Notification(items.length > 1 ? "⏰ Tasks Ending Soon" : "⏰ Task Ending Soon", {
+      body: items.length > 1
+        ? titles.map((t) => `\u2022 ${t}`).join("\n")
+        : `"${titles[0]}" is ending soon`,
+      icon: "/favicon.ico",
+      tag: "tasks-ending-soon",
+    });
+  } catch (err) {
+    console.warn("Browser notification failed, using fallback alert.", err);
+    emitFallbackAlert(items);
+  }
+};
+
+const fireTaskNotification = (title, id) => {
+  _pendingItems.set(id, title);
+  if (_notifyTimer) clearTimeout(_notifyTimer);
+  _notifyTimer = setTimeout(_sendBatch, 1500);
+};
+
 // Real hook only for countdowns
 const useCountdown = (item) => {
   const [timeLeft, setTimeLeft] = useState("--:--");
   const [expired, setExpired] = useState(false);
   const [percentRemaining, setPercentRemaining] = useState(100);
+  // Tracks which cycle we already notified for, to avoid repeat notifications
+  const notifiedCycleRef = useRef(null);
 
   useEffect(() => {
     // Handle default_daily mode - countdown to 5pm deadline
@@ -89,12 +136,18 @@ const useCountdown = (item) => {
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
 
-        setTimeLeft(
-          `${hours.toString().padStart(2, "0")}:${minutes
+        const timeLeftStr = `${hours.toString().padStart(2, "0")}:${minutes
             .toString()
-            .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
-        );
+            .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+        setTimeLeft(timeLeftStr);
         setExpired(false);
+
+        // Notify once per day when 30% of the window remains
+        const cycleKey = now.toDateString();
+        if (percent <= 30 && notifiedCycleRef.current !== cycleKey) {
+          notifiedCycleRef.current = cycleKey;
+          fireTaskNotification(item.title, item.id);
+        }
       };
 
       update();
@@ -102,20 +155,22 @@ const useCountdown = (item) => {
       return () => clearInterval(interval);
     }
     
-    // Handle default_monthly mode - resets first of month
+    // Handle default_monthly mode - 30-day rolling cycle anchored to startedAt
     if (item?.schedule?.mode === "default_monthly") {
       const update = () => {
         const now = new Date();
-        const resetDay = item.schedule.resetDay || 1; // First day of month
-        const resetTime = item.schedule.resetTime || "08:00";
-        const [hour, minute] = resetTime.split(":").map(Number);
-        
-        // Calculate current reset (first of this month) and next reset
-        const currentReset = new Date(now.getFullYear(), now.getMonth(), resetDay, hour, minute, 0);
-        let nextReset = new Date(now.getFullYear(), now.getMonth() + 1, resetDay, hour, minute, 0);
-        
+        const defaultDays = item.schedule.defaultDays || 30;
+        const periodMs = defaultDays * 24 * 3600 * 1000;
+
+        // Anchor to startedAt (set when default was saved), fall back to createdAt for legacy tasks
+        const created = new Date(item.schedule.startedAt || item.createdAt || item.created_at || now);
+        const elapsed = now - created;
+        const cyclesCompleted = Math.floor(Math.max(0, elapsed) / periodMs);
+        const currentReset = new Date(created.getTime() + cyclesCompleted * periodMs);
+        const nextReset = new Date(currentReset.getTime() + periodMs);
+
         const diffMs = nextReset - now;
-        const totalDuration = nextReset - currentReset;
+        const totalDuration = periodMs;
 
         if (diffMs <= 0) {
           setTimeLeft("TIME UP");
@@ -124,7 +179,7 @@ const useCountdown = (item) => {
           return;
         }
 
-        const percent = totalDuration > 0 ? Math.max(0, Math.min(100, (diffMs / totalDuration) * 100)) : 100;
+        const percent = Math.max(0, Math.min(100, (diffMs / totalDuration) * 100));
         setPercentRemaining(percent);
 
         const totalSeconds = Math.floor(diffMs / 1000);
@@ -132,17 +187,24 @@ const useCountdown = (item) => {
         const hours = Math.floor((totalSeconds % (24 * 3600)) / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
 
+        let timeLeftStr;
         if (days > 0) {
-          setTimeLeft(`${days}d ${hours}h ${minutes}m`);
+          timeLeftStr = `${days}d ${hours}h ${minutes}m`;
         } else {
           const seconds = totalSeconds % 60;
-          setTimeLeft(
-            `${hours.toString().padStart(2, "0")}:${minutes
+          timeLeftStr = `${hours.toString().padStart(2, "0")}:${minutes
               .toString()
-              .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
-          );
+              .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
         }
+        setTimeLeft(timeLeftStr);
         setExpired(false);
+
+        // Notify once per 30-day cycle when 30% of the period remains
+        const cycleKey = String(cyclesCompleted);
+        if (percent <= 30 && notifiedCycleRef.current !== cycleKey) {
+          notifiedCycleRef.current = cycleKey;
+          fireTaskNotification(item.title, item.id);
+        }
       };
 
       update();
@@ -175,12 +237,17 @@ const useCountdown = (item) => {
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
 
-        setTimeLeft(
-          `${hours.toString().padStart(2, "0")}:${minutes
+        const timeLeftStr = `${hours.toString().padStart(2, "0")}:${minutes
             .toString()
-            .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
-        );
+            .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+        setTimeLeft(timeLeftStr);
         setExpired(false);
+
+        // Notify once when 30% of the countdown remains
+        if (percent <= 30 && notifiedCycleRef.current !== "notified") {
+          notifiedCycleRef.current = "notified";
+          fireTaskNotification(item.title, item.id);
+        }
       };
 
       update();
@@ -274,9 +341,9 @@ function SubtaskCard({
 }) {
   const isSubHovered = hoveredSubtaskId === sub.id;
   
-  // Parse subtask schedule
-  const subtaskSchedule = parseSchedule(sub.schedule);
-  const subtaskWithSchedule = { ...sub, schedule: subtaskSchedule };
+  // Parse subtask schedule — memoized so useCountdown's [item] dep stays stable
+  const subtaskSchedule = useMemo(() => parseSchedule(sub.schedule), [sub.schedule]);
+  const subtaskWithSchedule = useMemo(() => ({ ...sub, schedule: subtaskSchedule }), [sub, subtaskSchedule]);
   const { timeLeft, expired, percentRemaining } = useCountdown(subtaskWithSchedule);
   const subDueDisplay = getDueDisplay(subtaskWithSchedule, timeLeft);
 
@@ -444,9 +511,9 @@ export default function TaskCard({
     (u) => supportingAssigneeIds.includes(u.id) && u.id !== Number(mainAssigneeId)
   );
 
-  // Parse task schedule
-  const taskSchedule = parseSchedule(task.schedule);
-  const taskWithSchedule = { ...task, schedule: taskSchedule };
+  // Parse task schedule — memoized so useCountdown's [item] dep stays stable
+  const taskSchedule = useMemo(() => parseSchedule(task.schedule), [task.schedule]);
+  const taskWithSchedule = useMemo(() => ({ ...task, schedule: taskSchedule }), [task, taskSchedule]);
   const { timeLeft, expired, percentRemaining } = useCountdown(taskWithSchedule);
   const dueDisplay = getDueDisplay(taskWithSchedule, timeLeft);
 

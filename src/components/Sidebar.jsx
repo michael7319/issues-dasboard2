@@ -15,13 +15,6 @@ export default function Sidebar({ currentView, setView, theme }) {
 
   const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 768);
   const [recentTasks, setRecentTasks] = useState([]);
-  const [localTheme, setLocalTheme] = useState(theme); // Local theme state
-
-  // Sync local theme with prop
-  useEffect(() => {
-    setLocalTheme(theme);
-    console.log("Sidebar theme received:", theme);
-  }, [theme]);
 
   const toggleSidebar = useCallback(() => {
     setIsCollapsed((prev) => {
@@ -87,10 +80,9 @@ export default function Sidebar({ currentView, setView, theme }) {
 
   return (
     <aside
-      key={localTheme}
       className={`fixed top-0 left-0 h-screen min-h-screen overflow-y-auto transition-all duration-300 ease-in-out ${
         isCollapsed ? "w-16" : "w-64"
-      } ${localTheme === "light" ? "bg-gradient-to-b from-gray-700 to-gray-800" : "bg-gradient-to-b from-blue-100 to-blue-200 bg-blue-200/80"} p-3 md:p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
+      } ${theme === "light" ? "bg-gradient-to-b from-gray-700 to-gray-800" : "bg-gradient-to-b from-blue-100 to-blue-200 bg-blue-200/80"} p-3 md:p-6 shadow-md flex flex-col z-50 border-r border-sidebar-border`}
       role="navigation"
       aria-label="Main navigation"
       style={{ scrollbarWidth: "none" }}
@@ -99,15 +91,15 @@ export default function Sidebar({ currentView, setView, theme }) {
       <div className="flex items-center justify-between mb-4 md:mb-8">
         {!isCollapsed && (
           <div className={`w-full text-center border-2 rounded-xl shadow-lg px-4 py-3 mb-2 transition-all duration-300
-            ${localTheme === "light" 
+            ${theme === "light" 
               ? "bg-gradient-to-r from-yellow-100 via-blue-100 to-blue-200 border-blue-400" 
               : "bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 border-blue-400"}`}
           >
             <img src="/BBC Logo.png" alt="Logo" className="mx-auto mb-2 h-15 w-25" />
-            <h2 className={`text-2xl font-bold mb-1 transition-colors duration-300 ${localTheme === "dark" ? "text-yellow-300" : "text-blue-900"}`}>
+            <h2 className={`text-2xl font-bold mb-1 transition-colors duration-300 ${theme === "dark" ? "text-yellow-300" : "text-blue-900"}`}>
               Issues Dashboard
             </h2>
-            <p className={`text-sm font-medium transition-colors duration-300 ${localTheme === "dark" ? "text-blue-200" : "text-blue-700"}`}>
+            <p className={`text-sm font-medium transition-colors duration-300 ${theme === "dark" ? "text-blue-200" : "text-blue-700"}`}>
               Manage your tasks
             </p>
           </div>
@@ -198,13 +190,13 @@ export default function Sidebar({ currentView, setView, theme }) {
       <div className="mt-4"> {/* Added space with mt-4 */}
         {!isCollapsed && (
           <>
-            <h3 className={`font-semibold mb-3 text-lg flex items-center gap-2 ${localTheme === "light" ? "text-blue-500" : "text-blue-800"}`}>
+            <h3 className={`font-semibold mb-3 text-lg flex items-center gap-2 ${theme === "light" ? "text-blue-500" : "text-blue-800"}`}>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5"
                 viewBox="0 0 20 20"
                 fill="currentColor"
-                style={{ color: localTheme === "light" ? "#3B82F6" : "#1e3a8a" }}
+                style={{ color: theme === "light" ? "#3B82F6" : "#1e3a8a" }}
               >
                 <path
                   fillRule="evenodd"
@@ -222,7 +214,7 @@ export default function Sidebar({ currentView, setView, theme }) {
                   <div
                     key={task.id}
                     className={`p-3 rounded-lg shadow-sm border-l-4 hover:shadow-md transition-shadow cursor-pointer
-                      ${localTheme === "light" ? "bg-blue-50 border-blue-300" : "bg-white bg-opacity-10 border-blue-500"}`}
+                      ${theme === "light" ? "bg-blue-50 border-blue-300" : "bg-white bg-opacity-10 border-blue-500"}`}
                     onClick={() => {
                       window.dispatchEvent(new CustomEvent("highlightTask", { detail: { taskId: task.id } }));
                     }}

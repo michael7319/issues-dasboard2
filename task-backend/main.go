@@ -456,7 +456,8 @@ func main() {
 
 	// GET /tasks/:id/attachments
 	r.GET("/tasks/:id/attachments", func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
 		idStr := c.Param("id")
 		taskIDNum, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
@@ -476,6 +477,11 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		if attachments == nil {
+			attachments = []Attachment{}
+		}
+		// Prevent browser from caching large attachment responses (base64 images)
+		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusOK, attachments)
 	})
 
