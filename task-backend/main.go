@@ -1,11 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -46,7 +55,7 @@ type Subtask struct {
 type Attachment struct {
 	ID        int64     `bson:"id" json:"id"`
 	TaskID    int64     `json:"task_id" bson:"task_id"`
-	Type      string    `json:"type" bson:"type"` // "link", "document", "image"
+	Type      string    `json:"type" bson:"type"` // "link", "file"
 	Name      string    `json:"name" bson:"name"`
 	URL       string    `json:"url" bson:"url"`
 	Size      any       `json:"size,omitempty" bson:"size,omitempty"` // Can be int64 or string from DB
@@ -57,6 +66,98 @@ type Attachment struct {
 type User struct {
 	ID   int64  `bson:"id" json:"id"`
 	Name string `bson:"name" json:"name"`
+}
+
+const fileServerBase = "http://41.76.198.1:9091"
+
+// fileServerClient uses a generous timeout for proxying large file
+// uploads/downloads to the external file server. Keep-alives are enabled
+// (default) so connections are reused; the retry logic in uploadToFileServer
+// handles the case where a pooled connection has been closed by the server.
+var fileServerClient = &http.Client{
+	Timeout: 3 * time.Minute,
+}
+
+func uploadToFileServer(file multipart.File, filename string, fileSize int64) (string, error) {
+	// Buffer the entire multipart body first so we know its size and can
+	// retry without needing to re-read the (already-consumed) source file.
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("files", filename)
+	if err != nil {
+		return "", err
+	}
+	copied, err := io.Copy(part, file)
+	if err != nil {
+		return "", fmt.Errorf("reading uploaded file: %w", err)
+	}
+	writer.Close()
+
+	body := buf.Bytes()
+	contentType := writer.FormDataContentType()
+	log.Printf("uploadToFileServer: file=%q declared=%d bytes read=%d multipart_body=%d bytes",
+		filename, fileSize, copied, len(body))
+
+	var lastErr error
+	for attempt := 1; attempt <= 2; attempt++ {
+		req, err := http.NewRequest("POST", fileServerBase+"/upload/issuesDashboard", bytes.NewReader(body))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", contentType)
+		// Suppress Go's automatic "Expect: 100-continue" header.
+		// Nginx rejects large requests at the header stage when it sees
+		// Expect: 100-continue + a Content-Length over client_max_body_size,
+		// but allows the same upload from browsers (which don't send Expect).
+		req.Header.Set("Expect", "")
+		// Don't set ContentLength — let Go use chunked transfer encoding.
+		// This avoids nginx rejecting based on Content-Length before reading.
+		req.ContentLength = -1
+		log.Printf("uploadToFileServer attempt %d: POST %s body=%d bytes (chunked)",
+			attempt, fileServerBase+"/upload/issuesDashboard", len(body))
+
+		resp, err := fileServerClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("could not reach file server: %w", err)
+			log.Printf("uploadToFileServer attempt %d network error: %v", attempt, lastErr)
+			continue // retry
+		}
+
+		respBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		log.Printf("uploadToFileServer attempt %d: response status=%d body=%s",
+			attempt, resp.StatusCode, strings.TrimSpace(string(respBytes)))
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return "", fmt.Errorf("file server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		}
+
+		var result struct {
+			Data []string `json:"Data"`
+		}
+		if err := json.Unmarshal(respBytes, &result); err != nil {
+			return "", fmt.Errorf("file server response parse error: %w (body: %s)", err, strings.TrimSpace(string(respBytes)))
+		}
+		if len(result.Data) == 0 {
+			return "", fmt.Errorf("file server returned empty path list (body: %s)", strings.TrimSpace(string(respBytes)))
+		}
+		return result.Data[0], nil
+	}
+	return "", lastErr
+}
+
+func deleteFromFileServer(filePath string) {
+	req, err := http.NewRequest("DELETE", fileServerBase+"/delete?filepath="+url.QueryEscape(filePath), nil)
+	if err != nil {
+		log.Println("deleteFromFileServer request error:", err)
+		return
+	}
+	resp, err := fileServerClient.Do(req)
+	if err != nil {
+		log.Println("deleteFromFileServer error:", err)
+		return
+	}
+	resp.Body.Close()
 }
 
 func main() {
@@ -78,6 +179,7 @@ func main() {
 	db := client.Database("task_manager_db")
 
 	r := gin.Default()
+	r.MaxMultipartMemory = 256 << 20 // 256 MB — matches our hard file size limit
 
 	// Configure CORS to allow network access
 	config := cors.DefaultConfig()
@@ -494,15 +596,68 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
 			return
 		}
+
 		var attachment Attachment
-		if err := c.BindJSON(&attachment); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
 		attachment.TaskID = taskIDNum
+		attachment.CreatedAt = time.Now().UTC()
+
+		const maxFileSizeBytes = 250 << 20 // 250 MB hard limit
+
+		contentType := c.GetHeader("Content-Type")
+		if len(contentType) >= 9 && contentType[:9] == "multipart" {
+			// Gin parses with r.MaxMultipartMemory (256 MB) — no need for
+			// explicit ParseMultipartForm or MaxBytesReader here.
+			fileHeader, err := c.FormFile("file")
+			if err != nil {
+				log.Printf("FormFile error: %v", err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Missing file field: " + err.Error()})
+				return
+			}
+
+			if fileHeader.Size > maxFileSizeBytes {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("File too large (%d MB, max 250 MB)", fileHeader.Size>>20)})
+				return
+			}
+
+			attachment.Type = c.PostForm("type")
+			attachment.Name = c.PostForm("name")
+			mimeType := c.PostForm("mime_type")
+			attachment.MimeType = &mimeType
+
+			f, err := fileHeader.Open()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open uploaded file"})
+				return
+			}
+			defer f.Close()
+
+			filename := fileHeader.Filename
+			if attachment.Name == "" {
+				attachment.Name = filename
+			}
+
+			storedPath, err := uploadToFileServer(f, filename, fileHeader.Size)
+			if err != nil {
+				log.Println("uploadToFileServer error:", err)
+				msg := fmt.Sprintf("Failed to upload to file server: %s", err.Error())
+				c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+				return
+			}
+			attachment.URL = storedPath
+			attachment.Size = fileHeader.Size
+		} else {
+			// JSON body — link type
+			if err := c.BindJSON(&attachment); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			attachment.TaskID = taskIDNum
+		}
+
 		if attachment.CreatedAt.IsZero() {
 			attachment.CreatedAt = time.Now().UTC()
 		}
+
 		seq, err := getNextSeq(ctx, "attachmentid")
 		if err != nil {
 			log.Println("attachment seq error:", err)
@@ -535,11 +690,141 @@ func main() {
 			return
 		}
 		attachmentsColl := db.Collection("attachments")
+
+		// Fetch attachment to get file path before deleting
+		var existing Attachment
+		if err := attachmentsColl.FindOne(ctx, bson.M{"id": attachmentIDNum, "task_id": taskIDNum}).Decode(&existing); err == nil {
+			if existing.Type == "file" && existing.URL != "" {
+				deleteFromFileServer(existing.URL)
+			}
+		}
+
 		if _, err := attachmentsColl.DeleteOne(ctx, bson.M{"id": attachmentIDNum, "task_id": taskIDNum}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+	})
+
+	// GET /tasks/:id/attachments/:attachmentId/download
+	// Proxies the file from the file server back to the client
+	r.GET("/tasks/:id/attachments/:attachmentId/download", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		taskIDNum, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+			return
+		}
+		attIDNum, err := strconv.ParseInt(c.Param("attachmentId"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid attachment ID"})
+			return
+		}
+
+		attachmentsColl := db.Collection("attachments")
+		var att Attachment
+		if err := attachmentsColl.FindOne(ctx, bson.M{"id": attIDNum, "task_id": taskIDNum}).Decode(&att); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Attachment not found"})
+			return
+		}
+
+		if att.Type != "file" || att.URL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Not a file attachment"})
+			return
+		}
+
+		fileURL := fileServerBase + "/download?filepath=" + url.QueryEscape(att.URL)
+		req, err := http.NewRequest("GET", fileURL, nil)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build request"})
+			return
+		}
+		resp, err := fileServerClient.Do(req)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "File server unreachable"})
+			return
+		}
+		defer resp.Body.Close()
+
+		var fsResp struct {
+			Data struct {
+				Filename  string `json:"Filename"`
+				FileBytes string `json:"FileBytes"`
+			} `json:"Data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&fsResp); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode file server response"})
+			return
+		}
+
+		fileBytes, err := base64.StdEncoding.DecodeString(fsResp.Data.FileBytes)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode file bytes"})
+			return
+		}
+
+		filename := fsResp.Data.Filename
+		if filename == "" {
+			filename = att.Name
+		}
+
+		mimeType := "application/octet-stream"
+		if att.MimeType != nil && *att.MimeType != "" && *att.MimeType != "application/octet-stream" {
+			mimeType = *att.MimeType
+		} else {
+			// Fallback: detect from file extension (mime.TypeByExtension can be unreliable on Windows)
+			ext := strings.ToLower(filepath.Ext(filename))
+			knownMimes := map[string]string{
+				".jpg":  "image/jpeg",
+				".jpeg": "image/jpeg",
+				".jfif": "image/jpeg",
+				".png":  "image/png",
+				".gif":  "image/gif",
+				".webp": "image/webp",
+				".bmp":  "image/bmp",
+				".svg":  "image/svg+xml",
+				".avif": "image/avif",
+				".tiff": "image/tiff",
+				".tif":  "image/tiff",
+				".ico":  "image/x-icon",
+				".heic": "image/heic",
+				".heif": "image/heif",
+				".mp4":  "video/mp4",
+				".webm": "video/webm",
+				".mov":  "video/quicktime",
+				".avi":  "video/x-msvideo",
+				".mkv":  "video/x-matroska",
+				".ogg":  "video/ogg",
+				".pdf":  "application/pdf",
+				".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+				".xls":  "application/vnd.ms-excel",
+				".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				".doc":  "application/msword",
+				".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+				".zip":  "application/zip",
+				".txt":  "text/plain",
+				".csv":  "text/csv",
+			}
+			if m, ok := knownMimes[ext]; ok {
+				mimeType = m
+			} else if detected := mime.TypeByExtension(ext); detected != "" {
+				mimeType = detected
+			}
+		}
+
+		// ?inline=1 → Content-Disposition: inline (for browser preview)
+		// default → Content-Disposition: attachment (force download)
+		disposition := "attachment"
+		if c.Query("inline") == "1" {
+			disposition = "inline"
+		}
+
+		c.Header("Content-Disposition", disposition+`; filename="`+filename+`"`)
+		c.Header("Content-Type", mimeType)
+		c.Header("Cache-Control", "no-store")
+		c.Data(http.StatusOK, mimeType, fileBytes)
 	})
 
 	r.Run(":8080")

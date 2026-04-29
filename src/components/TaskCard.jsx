@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import users from "../data/users";
-import { Pencil, Trash2, Plus, Archive, Pin, Link as LinkIcon, FileText, Image as ImageIcon } from "lucide-react";
-import ImageLightbox from "./ImageLightbox";
+import { Pencil, Trash2, Plus, Archive, Pin, Link as LinkIcon, FileText } from "lucide-react";
 
 const priorityBorderColors = {
   High: "border-red-500 text-red-600",
@@ -468,7 +467,6 @@ export default function TaskCard({
   const [isCompleted, setIsCompleted] = useState(task.completed || false);
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredSubtaskId, setHoveredSubtaskId] = useState(null);
-  const [lightboxImage, setLightboxImage] = useState(null);
   const cardRef = React.useRef(null);
 
   useEffect(() => {
@@ -479,11 +477,11 @@ export default function TaskCard({
   useEffect(() => {
     if (!cardRef.current || !onLoadAttachments) return;
 
-    const hasEmptyImageUrls = task.attachments?.some(
-      att => att.type === 'image' && att.id && (!att.url || att.url.trim() === '')
+    const hasUnloadedFiles = task.attachments?.some(
+      att => att.type === 'file' && att.id && (!att.url || att.url.trim() === '')
     );
 
-    if (!hasEmptyImageUrls) return; // Already loaded
+    if (!hasUnloadedFiles) return; // Already loaded
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -642,128 +640,57 @@ export default function TaskCard({
               isHovered ? "max-h-96 mt-2 opacity-100" : "max-h-0 opacity-0"
             }`}
           >
-            <div className="space-y-2">
-              {/* Image thumbnails - only show loaded images (URL present) */}
-              {task.attachments.filter(att => att.type === 'image' && att.url && att.url.trim() !== '' && att.url.length > 100).length > 0 && (() => {
-                const imageAttachments = task.attachments.filter(att => att.type === 'image' && att.url && att.url.trim() !== '' && att.url.length > 100);
-                const hasMoreThanTwo = imageAttachments.length > 2;
-                
+            <div className="flex flex-wrap gap-1">
+              {task.attachments.map((att, index) => {
+                const key = att.id || `attachment-${index}`;
+                const apiBase = `http://${window.location.hostname}:8080`;
+
+                if (att.type === "link" && att.url) {
+                  return (
+                    <a
+                      key={key}
+                      href={att.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] hover:bg-gray-500 transition-colors cursor-pointer"
+                      title={att.url}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <LinkIcon size={10} className="text-green-400" />
+                      <span className="max-w-[80px] truncate">{att.name || 'Link'}</span>
+                    </a>
+                  );
+                }
+
+                if (att.type === "file" && att.id) {
+                  const downloadUrl = `${apiBase}/tasks/${task.id}/attachments/${att.id}/download`;
+                  return (
+                    <a
+                      key={key}
+                      href={downloadUrl}
+                      download={att.name || 'file'}
+                      className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] hover:bg-gray-500 transition-colors cursor-pointer"
+                      title={`Download ${att.name || 'file'}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <FileText size={10} className="text-blue-400" />
+                      <span className="max-w-[80px] truncate">{att.name || 'File'}</span>
+                    </a>
+                  );
+                }
+
+                // Fallback for legacy image/document types or pending uploads
                 return (
-                  <div className={`flex flex-col gap-2 pr-1 ${hasMoreThanTwo ? 'max-h-[280px] overflow-y-auto custom-scrollbar-taskcard' : ''}`}>
-                    {imageAttachments.map((att, index) => {
-                      const key = att.id || `image-${index}`;
-                      return (
-                        <div
-                          key={key}
-                          className="block rounded overflow-hidden hover:opacity-80 transition-opacity cursor-pointer border border-gray-600 hover:border-purple-500 w-full flex-shrink-0"
-                          title={`View ${att.name || 'image'}`}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setLightboxImage({ url: att.url, name: att.name });
-                          }}
-                        >
-                          <img
-                            src={att.url}
-                            alt={att.name || 'attachment'}
-                            loading="lazy"
-                            className="w-full h-32 object-cover rounded"
-                            onError={(e) => {
-                              // If image fails to load, show placeholder
-                              e.target.style.display = 'none';
-                              e.target.parentElement.innerHTML = `<div class="h-32 w-full bg-gray-700 flex items-center justify-center text-purple-400"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></div>`;
-                            }}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <span
+                    key={key}
+                    className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] cursor-default"
+                    title={att.name || 'Attachment'}
+                  >
+                    <FileText size={10} className="text-blue-400" />
+                    <span className="max-w-[80px] truncate">{att.name || 'File'}</span>
+                  </span>
                 );
-              })()}
-              
-              {/* Links and Documents - shown as badges */}
-              {task.attachments.filter(att => (att.type === "link" || att.type === "document") && att.url && att.url.trim() !== '').length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {task.attachments.map((att, index) => {
-                    const isUploadedFile = att.url && att.url.startsWith('data:');
-                    const hasValidUrl = att.url && att.url.trim() !== '';
-                    const key = att.id || `attachment-${index}`;
-
-                    // Skip images (already rendered above)
-                    if (att.type === "image") return null;
-
-                    const content = (
-                      <>
-                        {att.type === "document" && <FileText size={10} className="text-blue-400" />}
-                        {att.type === "link" && <LinkIcon size={10} className="text-green-400" />}
-                        <span className="max-w-[80px] truncate">{att.name || 'Unnamed'}</span>
-                      </>
-                    );
-
-                    // Links are always clickable if they have a valid URL
-                    if (att.type === "link" && hasValidUrl) {
-                      return (
-                        <a
-                          key={key}
-                          href={att.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] hover:bg-gray-500 transition-colors cursor-pointer"
-                          title={`${att.name || 'Link'} - ${att.url}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {content}
-                        </a>
-                      );
-                    }
-                    
-                    // Documents - can be downloaded or opened
-                    if (att.type === "document" && hasValidUrl) {
-                      if (isUploadedFile) {
-                        // Base64 document - download
-                        return (
-                          <a
-                            key={key}
-                            href={att.url}
-                            download={att.name || 'document'}
-                            className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] hover:bg-gray-500 transition-colors cursor-pointer"
-                            title={`Download ${att.name || 'document'}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {content}
-                          </a>
-                        );
-                      } else {
-                        // External document URL - open in new tab
-                        return (
-                          <a
-                            key={key}
-                            href={att.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] hover:bg-gray-500 transition-colors cursor-pointer"
-                            title={`${att.name || 'Document'} - ${att.url}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {content}
-                          </a>
-                        );
-                      }
-                    }
-                    
-                    // Fallback - just display as text (no URL available)
-                    return (
-                      <span
-                        key={key}
-                        className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-600 rounded text-[9px] cursor-default"
-                        title={att.name || 'Attachment'}
-                      >
-                        {content}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
+              })}
             </div>
           </div>
         )}
@@ -829,14 +756,6 @@ export default function TaskCard({
         />
       ))}
     </div>
-
-    {/* Image Lightbox - rendered outside card to prevent event interference */}
-    <ImageLightbox
-      imageUrl={lightboxImage?.url}
-      imageName={lightboxImage?.name}
-      isOpen={!!lightboxImage}
-      onClose={() => setLightboxImage(null)}
-    />
     </>
   );
 }
