@@ -10,6 +10,42 @@ import users from "./data/users";
 // Dynamic API base URL - uses current host for network access
 const API_BASE = `http://${window.location.hostname}:8080`;
 
+// Upload a single attachment to the backend.
+// File-type attachments are sent as multipart; links as JSON.
+const uploadAttachment = async (taskId, att) => {
+  if (att.type === "file" && att._file) {
+    const form = new FormData();
+    form.append("type", "file");
+    form.append("name", att.name || att._file.name);
+    form.append("mime_type", att._file.type || "application/octet-stream");
+    form.append("size", String(att._file.size));
+    form.append("file", att._file, att._file.name);
+    const res = await fetch(`${API_BASE}/tasks/${taskId}/attachments`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      let serverMsg = "";
+      try { const b = await res.json(); serverMsg = b.error || ""; } catch {}
+      throw new Error(`Attachment upload failed (${res.status})${serverMsg ? ": " + serverMsg : ""}`);
+    }
+    return await res.json();
+  }
+  // Link type — plain JSON
+  const { _file, ...cleanAtt } = att;
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/attachments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(toSnakeCase(cleanAtt)),
+  });
+  if (!res.ok) {
+    let serverMsg = "";
+    try { const b = await res.json(); serverMsg = b.error || ""; } catch {}
+    throw new Error(`Attachment upload failed (${res.status})${serverMsg ? ": " + serverMsg : ""}`);
+  }
+  return await res.json();
+};
+
 const toSnakeCase = (obj) => {
   if (Array.isArray(obj)) {
     return obj.map(toSnakeCase);
@@ -119,7 +155,7 @@ function App() {
         ...task,
         attachments: task.attachments ? task.attachments.map(att => ({
           ...att,
-          url: att.url && att.url.length > 1000 ? '' : att.url // Strip base64, keep regular URLs
+          url: att.url && att.url.length > 1000 ? '' : att.url // Strip legacy base64, keep short paths/URLs
         })) : []
       }));
       
@@ -242,16 +278,14 @@ function App() {
       const newTask = toCamelCase(newTaskSnake);
       
       // Add attachments if any
+      const createUploadErrors = [];
       if (attachments.length > 0) {
         for (const att of attachments) {
           try {
-            await fetch(`${API_BASE}/tasks/${newTask.id}/attachments`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(toSnakeCase(att))
-            });
+            await uploadAttachment(newTask.id, att);
           } catch (attErr) {
             console.error("Failed to add attachment:", attErr);
+            createUploadErrors.push(`"${att.name || att._file?.name || "file"}": ${attErr.message}`);
           }
         }
         // Fetch attachments for the new task
@@ -268,11 +302,19 @@ function App() {
       
       // Dispatch event to notify sidebar to refresh recent tasks
       window.dispatchEvent(new CustomEvent("taskAdded"));
+
+      if (createUploadErrors.length > 0) {
+        throw new Error(
+          `Task created, but failed to upload attachment(s):\n${createUploadErrors.join("\n")}\n\nPlease re-add the attachment and save again.`
+        );
+      }
       
       return newTask;
     } catch (err) {
       console.error("Failed to create task:", err);
-      setError(err.message);
+      if (!err.message?.startsWith("Task created, but")) {
+        setError(err.message);
+      }
       throw err;
     }
   };
@@ -316,16 +358,14 @@ function App() {
       }
       
       // Add new attachments (those without an id)
+      const uploadErrors = [];
       for (const att of attachments) {
         if (!att.id) {
           try {
-            await fetch(`${API_BASE}/tasks/${taskId}/attachments`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(toSnakeCase(att))
-            });
+            await uploadAttachment(taskId, att);
           } catch (attErr) {
             console.error("Failed to add attachment:", attErr);
+            uploadErrors.push(`"${att.name || att._file?.name || "file"}": ${attErr.message}`);
           }
         }
       }
@@ -335,12 +375,14 @@ function App() {
       if (attRes.ok) {
         const attData = await attRes.json();
         updatedTask.attachments = toCamelCase(attData);
+        // Bust cache so next modal open sees fresh data
+        attachmentCacheRef.current.delete(`task-${taskId}`);
       } else {
         updatedTask.attachments = [];
       }
       
       // Preserve existing subtasks when updating main task
-      setTasks(tasks.map((task) => {
+      setTasks(prev => prev.map((task) => {
         if (task.id === taskId) {
           return {
             ...updatedTask,
@@ -352,11 +394,21 @@ function App() {
 
       // Dispatch event to notify sidebar to refresh recent tasks
       window.dispatchEvent(new CustomEvent("taskUpdated"));
+
+      // Surface attachment upload errors AFTER the task has been saved
+      if (uploadErrors.length > 0) {
+        throw new Error(
+          `Task saved, but failed to upload attachment(s):\n${uploadErrors.join("\n")}\n\nPlease re-add the attachment and save again.`
+        );
+      }
       
       return updatedTask;
     } catch (err) {
       console.error("Failed to update task:", err);
-      setError(err.message);
+      // Only show full-screen error for task-save failures, not attachment failures
+      if (!err.message?.startsWith("Task saved, but")) {
+        setError(err.message);
+      }
       throw err;
     }
   };
@@ -387,9 +439,10 @@ function App() {
   const handleTaskClick = async (task) => {
     setViewedTask(task);
     
-    // PERFORMANCE: Load attachments on-demand when task is opened
-    if (!task.attachments || task.attachments.length === 0) {
-      await loadTaskAttachments(task.id);
+    // Always reload attachments when opening the modal to get fresh data
+    const loaded = await loadTaskAttachments(task.id);
+    if (loaded && loaded.length > 0) {
+      setViewedTask(prev => prev?.id === task.id ? { ...prev, attachments: loaded } : prev);
     }
   };
 

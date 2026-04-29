@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { Link as LinkIcon, FileText, Image as ImageIcon, X, ExternalLink } from "lucide-react";
+import React, { useState, useRef } from "react";
+import { Link as LinkIcon, FileText, X, ExternalLink, Loader2 } from "lucide-react";
+import { compressVideo, isVideoFile, validateFileSize, needsCompression, formatFileSize } from "@/lib/videoCompressor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,153 +19,76 @@ export default function AttachmentManager({ attachments = [], onAdd, onRemove, d
   const [attachmentUrl, setAttachmentUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadError, setUploadError] = useState("");
-  const [compressing, setCompressing] = useState(false);
-
-  // PERFORMANCE: Compress images automatically before upload
-  const compressImage = (file, maxSizeMB = 0.5, maxWidthOrHeight = 1920) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      
-      reader.onload = (e) => {
-        const img = new Image();
-        
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          
-          // Calculate new dimensions while maintaining aspect ratio
-          if (width > height) {
-            if (width > maxWidthOrHeight) {
-              height = (height * maxWidthOrHeight) / width;
-              width = maxWidthOrHeight;
-            }
-          } else {
-            if (height > maxWidthOrHeight) {
-              width = (width * maxWidthOrHeight) / height;
-              height = maxWidthOrHeight;
-            }
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          
-          // Start with high quality and reduce until size is acceptable
-          let quality = 0.9;
-          const attemptCompress = () => {
-            canvas.toBlob(
-              (blob) => {
-                const sizeMB = blob.size / (1024 * 1024);
-                
-                // If size is acceptable or quality is too low, use this version
-                if (sizeMB <= maxSizeMB || quality <= 0.1) {
-                  const compressedReader = new FileReader();
-                  compressedReader.onloadend = () => {
-                    resolve({
-                      dataUrl: compressedReader.result,
-                      sizeMB: sizeMB,
-                      originalSizeMB: file.size / (1024 * 1024)
-                    });
-                  };
-                  compressedReader.readAsDataURL(blob);
-                } else {
-                  // Try with lower quality
-                  quality -= 0.1;
-                  attemptCompress();
-                }
-              },
-              'image/jpeg',
-              quality
-            );
-          };
-          
-          attemptCompress();
-        };
-        
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = e.target.result;
-      };
-      
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsDataURL(file);
-    });
-  };
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressionProgress, setCompressionProgress] = useState(0);
+  const fileInputRef = useRef(null);
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setUploadError("");
-      
-      // Auto-set name from filename if not already set
-      if (!attachmentName.trim()) {
-        setAttachmentName(file.name);
-      }
-      
-      // Compress images automatically
-      if (file.type.startsWith('image/')) {
-        try {
-          setCompressing(true);
-          const compressed = await compressImage(file);
-          setAttachmentUrl(compressed.dataUrl);
-          setUploadError(
-            `Image compressed: ${compressed.originalSizeMB.toFixed(2)} MB → ${compressed.sizeMB.toFixed(2)} MB`
-          );
-          setCompressing(false);
-        } catch (err) {
-          console.error('Compression failed, using original:', err);
-          // Fallback to original if compression fails
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            setAttachmentUrl(reader.result);
-            setCompressing(false);
-          };
-          reader.onerror = () => {
-            setUploadError("Failed to read file");
-            setCompressing(false);
-          };
-          reader.readAsDataURL(file);
-        }
-      } else {
-        // Non-image files: read as-is
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setAttachmentUrl(reader.result);
-        };
-        reader.onerror = () => {
-          setUploadError("Failed to read file");
-        };
-        reader.readAsDataURL(file);
-      }
+    if (!file) return;
+
+    setUploadError("");
+    setSelectedFile(null);
+    setCompressionProgress(0);
+
+    // Validate size limits before doing anything else
+    const sizeError = validateFileSize(file);
+    if (sizeError) {
+      setUploadError(sizeError);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
     }
+
+    if (!attachmentName.trim()) {
+      setAttachmentName(file.name);
+    }
+
+    // Auto-compress videos that exceed the 20 MB limit
+    if (needsCompression(file)) {
+      setIsCompressing(true);
+      setCompressionProgress(1);
+      try {
+        const compressed = await compressVideo(file, setCompressionProgress);
+        setSelectedFile(compressed);
+        // Update the displayed name to reflect the compressed file
+        setAttachmentName((prev) => prev || compressed.name);
+      } catch (err) {
+        setUploadError(err.message);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      } finally {
+        setIsCompressing(false);
+      }
+      return;
+    }
+
+    setSelectedFile(file);
   };
 
   const handleAdd = () => {
-    // For links, URL is required
     if (attachmentType === "link") {
       if (!attachmentUrl.trim()) {
         setUploadError("URL is required for links");
         return;
       }
-      // Validate URL format
+      // Auto-prepend https:// if no scheme provided
+      let finalUrl = attachmentUrl.trim();
+      if (!/^https?:\/\//i.test(finalUrl) && !/^ftp:\/\//i.test(finalUrl)) {
+        finalUrl = "https://" + finalUrl;
+      }
       try {
-        new URL(attachmentUrl.trim());
+        new URL(finalUrl);
       } catch {
-        setUploadError("Please enter a valid URL (e.g., https://example.com)");
+        setUploadError("Please enter a valid URL");
         return;
       }
+      setAttachmentUrl(finalUrl);
     }
 
-    // For images/documents, either file or URL is required
-    if ((attachmentType === "image" || attachmentType === "document") && !attachmentUrl && !selectedFile) {
-      setUploadError("Please upload a file or provide a URL");
+    if (attachmentType === "file" && !selectedFile) {
+      setUploadError("Please select a file to upload");
       return;
     }
 
-    // Auto-generate name from URL if not provided
     let finalName = attachmentName.trim();
     if (!finalName) {
       if (selectedFile) {
@@ -185,14 +109,20 @@ export default function AttachmentManager({ attachments = [], onAdd, onRemove, d
     const newAttachment = {
       type: attachmentType,
       name: finalName,
-      url: attachmentUrl.trim() || "",
-      mime_type: selectedFile ? selectedFile.type : getMimeType(attachmentType, attachmentUrl),
+      url: attachmentType === "link" ? ((() => {
+        let u = attachmentUrl.trim();
+        if (!/^https?:\/\//i.test(u) && !/^ftp:\/\//i.test(u)) u = "https://" + u;
+        return u;
+      })()) : "",
+      mime_type: selectedFile ? selectedFile.type : "text/html",
       size: selectedFile ? selectedFile.size : null,
       created_at: new Date().toISOString(),
+      // Pass raw File object so App.jsx can upload it to the file server
+      _file: attachmentType === "file" ? selectedFile : undefined,
     };
 
     onAdd(newAttachment);
-    
+
     // Reset form
     setAttachmentName("");
     setAttachmentUrl("");
@@ -201,32 +131,9 @@ export default function AttachmentManager({ attachments = [], onAdd, onRemove, d
     setShowAddForm(false);
   };
 
-  const getMimeType = (type, url) => {
-    if (type === "link") return "text/html";
-    if (type === "image") {
-      if (url.endsWith(".png")) return "image/png";
-      if (url.endsWith(".jpg") || url.endsWith(".jpeg")) return "image/jpeg";
-      if (url.endsWith(".gif")) return "image/gif";
-      return "image/jpeg";
-    }
-    if (type === "document") {
-      if (url.endsWith(".pdf")) return "application/pdf";
-      if (url.endsWith(".doc") || url.endsWith(".docx")) return "application/msword";
-      return "application/pdf";
-    }
-    return "text/html";
-  };
-
   const getIcon = (type) => {
-    switch (type) {
-      case "image":
-        return <ImageIcon size={14} className="text-purple-400" />;
-      case "document":
-        return <FileText size={14} className="text-blue-400" />;
-      case "link":
-      default:
-        return <LinkIcon size={14} className="text-green-400" />;
-    }
+    if (type === "link") return <LinkIcon size={14} className="text-green-400" />;
+    return <FileText size={14} className="text-blue-400" />;
   };
 
   return (
@@ -239,7 +146,7 @@ export default function AttachmentManager({ attachments = [], onAdd, onRemove, d
             size="sm"
             variant="outline"
             onClick={() => setShowAddForm(true)}
-            disabled={disabled}
+            disabled={disabled || isCompressing}
             className="text-xs h-7"
           >
             + Add Attachment
@@ -261,8 +168,7 @@ export default function AttachmentManager({ attachments = [], onAdd, onRemove, d
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="link">🔗 Link</SelectItem>
-                  <SelectItem value="document">📄 Document</SelectItem>
-                  <SelectItem value="image">🖼️ Image</SelectItem>
+                  <SelectItem value="file">📁 Upload File</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -298,52 +204,49 @@ export default function AttachmentManager({ attachments = [], onAdd, onRemove, d
               />
             </div>
           ) : (
-            <>
-              <div>
-                <Label htmlFor="attachment-file" className="text-xs mb-1 block">
-                  Upload {attachmentType === "image" ? "Image" : "Document"}
-                </Label>
-                <Input
-                  id="attachment-file"
-                  type="file"
-                  accept={attachmentType === "image" ? "image/*" : ".pdf,.doc,.docx,.txt"}
-                  onChange={handleFileChange}
-                  className="text-xs h-8"
-                  disabled={compressing}
-                />
-                {compressing && (
-                  <p className="text-[10px] text-blue-400 mt-1">
-                    ⏳ Compressing image...
+            <div>
+              <Label htmlFor="attachment-file" className="text-xs mb-1 block">
+                Upload File
+              </Label>
+              <Input
+                id="attachment-file"
+                ref={fileInputRef}
+                type="file"
+                accept="*/*"
+                onChange={handleFileChange}
+                disabled={isCompressing}
+                className="text-xs h-8"
+              />
+              {/* Compression progress bar */}
+              {isCompressing && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center gap-2 text-[10px] text-blue-600">
+                    <Loader2 size={12} className="animate-spin" />
+                    <span>Compressing video… {compressionProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div
+                      className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${compressionProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    Large videos are compressed to under 20 MB before upload.
                   </p>
-                )}
-                {selectedFile && !compressing && (
-                  <p className="text-[10px] text-gray-500 mt-1">
-                    Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-                  </p>
-                )}
-              </div>
-              
-              <div>
-                <Label htmlFor="attachment-url-alt" className="text-xs mb-1 block">
-                  Or provide URL <span className="text-gray-400">(optional)</span>
-                </Label>
-                <Input
-                  id="attachment-url-alt"
-                  type="url"
-                  placeholder="https://..."
-                  value={attachmentUrl && !attachmentUrl.startsWith('data:') ? attachmentUrl : ''}
-                  onChange={(e) => setAttachmentUrl(e.target.value)}
-                  className="text-xs h-8"
-                  disabled={!!selectedFile}
-                />
-              </div>
-            </>
+                </div>
+              )}
+              {selectedFile && !isCompressing && (
+                <p className="text-[10px] text-gray-500 mt-1">
+                  {selectedFile.name.includes("_compressed")
+                    ? `✓ Compressed: ${selectedFile.name} (${formatFileSize(selectedFile.size)})`
+                    : `Selected: ${selectedFile.name} (${formatFileSize(selectedFile.size)})`}
+                </p>
+              )}
+            </div>
           )}
 
           {uploadError && (
-            <p className={`text-[10px] ${uploadError.includes('compressed') ? 'text-green-500' : 'text-red-600'}`}>
-              {uploadError}
-            </p>
+            <p className="text-[10px] text-red-600">{uploadError}</p>
           )}
 
           <div className="flex gap-2 justify-end">
@@ -357,7 +260,10 @@ export default function AttachmentManager({ attachments = [], onAdd, onRemove, d
                 setAttachmentUrl("");
                 setSelectedFile(null);
                 setUploadError("");
+                setIsCompressing(false);
+                setCompressionProgress(0);
               }}
+              disabled={isCompressing}
               className="text-xs h-7"
             >
               Cancel
@@ -366,10 +272,10 @@ export default function AttachmentManager({ attachments = [], onAdd, onRemove, d
               type="button"
               size="sm"
               onClick={handleAdd}
-              disabled={compressing || (attachmentType === "link" ? !attachmentUrl.trim() : (!selectedFile && !attachmentUrl.trim()))}
+              disabled={isCompressing || (attachmentType === "link" ? !attachmentUrl.trim() : !selectedFile)}
               className="text-xs h-7"
             >
-              {compressing ? "Compressing..." : "Add"}
+              Add
             </Button>
           </div>
         </div>

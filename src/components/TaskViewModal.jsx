@@ -292,79 +292,153 @@ export default function TaskViewModal({ task, users, isOpen, onClose, onEdit, on
           {localTask.attachments && localTask.attachments.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-gray-400 mb-3">Attachments</h3>
-              
-              {/* Images - Show larger previews */}
-              {localTask.attachments.filter(att => att.type === "image" && att.url).length > 0 && (
-                <div className="space-y-3 mb-4">
-                  {localTask.attachments
-                    .filter(att => att.type === "image" && att.url)
-                    .map((att, index) => (
-                      <div key={att.id || `img-${index}`} className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-gray-300">
-                          <ImageIcon size={16} className="text-purple-400" />
-                          <span>{att.name || 'Image'}</span>
+              <div className="space-y-2">
+                {localTask.attachments.map((att, index) => {
+                  const apiBase = `http://${window.location.hostname}:8080`;
+                  const key = att.id || `att-${index}`;
+                  const sizeLabel = att.size
+                    ? typeof att.size === 'number'
+                      ? `${(att.size / 1024).toFixed(1)} KB`
+                      : att.size
+                    : null;
+
+                  // Link type — same as before
+                  if (att.type === "link") {
+                    return (
+                      <a
+                        key={key}
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        <LinkIcon size={20} className="text-green-400" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{att.name || 'Link'}</p>
+                          {sizeLabel && <p className="text-xs text-gray-400">{sizeLabel}</p>}
                         </div>
-                        <div
-                          onClick={() => setLightboxImage({ url: att.url, name: att.name })}
-                          className="block rounded-lg overflow-hidden border border-gray-600 hover:border-purple-500 cursor-pointer transition-colors"
-                        >
-                          <img
-                            src={att.url}
-                            alt={att.name || 'attachment'}
-                            className="w-full h-auto max-h-96 object-contain bg-gray-900"
-                            onError={(e) => {
-                              e.target.parentElement.innerHTML = `
-                                <div class="w-full h-48 bg-gray-700 flex items-center justify-center text-gray-400">
-                                  <div class="text-center">
-                                    <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                    </svg>
-                                    <p>Failed to load image</p>
-                                  </div>
-                                </div>
-                              `;
-                            }}
+                        <span className="text-xs text-gray-400">Open</span>
+                      </a>
+                    );
+                  }
+
+                  // File type — build backend URLs
+                  if (att.type === "file" && att.id) {
+                    const downloadUrl = `${apiBase}/tasks/${localTask.id}/attachments/${att.id}/download`;
+                    const inlineUrl = `${apiBase}/tasks/${localTask.id}/attachments/${att.id}/download?inline=1`;
+                    const mime = att.mimeType || att.mime_type || "";
+                    // Use extension fallback when mime is empty OR a generic placeholder
+                    const needsExtFallback = !mime || mime === "application/octet-stream";
+                    const ext = (att.name || "").split('.').pop().toLowerCase();
+                    const imageExts = ['jpg', 'jpeg', 'jfif', 'pjpeg', 'pjp', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tiff', 'tif', 'ico', 'heic', 'heif'];
+                    const videoExts = ['mp4', 'webm', 'ogg', 'ogv', 'mov', 'avi', 'mkv', '3gp', 'flv'];
+                    const isImage = mime.startsWith("image/") || (needsExtFallback && imageExts.includes(ext));
+                    const isVideo = mime.startsWith("video/") || (needsExtFallback && videoExts.includes(ext));
+                    const isPdf = mime === "application/pdf" || (needsExtFallback && ext === "pdf");
+
+                    if (isImage) {
+                      return (
+                        <div key={key} className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm text-gray-300">
+                            <ImageIcon size={16} className="text-purple-400" />
+                            <span>{att.name || 'Image'}</span>
+                            {sizeLabel && <span className="text-xs text-gray-500">{sizeLabel}</span>}
+                          </div>
+                          <div
+                            onClick={() => setLightboxImage({ url: inlineUrl, name: att.name })}
+                            className="block rounded-lg overflow-hidden border border-gray-600 hover:border-purple-500 cursor-pointer transition-colors"
+                          >
+                            <img
+                              src={inlineUrl}
+                              alt={att.name || 'attachment'}
+                              className="w-full h-auto max-h-96 object-contain bg-gray-900"
+                              onError={(e) => {
+                                e.target.parentElement.innerHTML = `<div class="w-full h-48 bg-gray-700 flex items-center justify-center text-gray-400 rounded-lg"><p class="text-sm">Failed to load image</p></div>`;
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (isVideo) {
+                      return (
+                        <div key={key} className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm text-gray-300">
+                            <FileText size={16} className="text-blue-400" />
+                            <span>{att.name || 'Video'}</span>
+                            {sizeLabel && <span className="text-xs text-gray-500">{sizeLabel}</span>}
+                          </div>
+                          <video
+                            src={inlineUrl}
+                            controls
+                            className="w-full rounded-lg border border-gray-600 bg-gray-900"
                           />
                         </div>
-                      </div>
-                    ))}
-                </div>
-              )}
+                      );
+                    }
 
-              {/* Links and Documents */}
-              {localTask.attachments.filter(att => (att.type === "link" || att.type === "document") && att.url).length > 0 && (
-                <div className="space-y-2">
-                  {localTask.attachments
-                    .filter(att => (att.type === "link" || att.type === "document") && att.url)
-                    .map((att, index) => {
-                      const isUploadedFile = att.url.startsWith('data:');
+                    if (isPdf) {
                       return (
                         <a
-                          key={att.id || `att-${index}`}
-                          href={att.url}
+                          key={key}
+                          href={inlineUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          download={att.type === "document" && isUploadedFile ? att.name : undefined}
                           className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors"
                         >
-                          {att.type === "link" && <LinkIcon size={20} className="text-green-400" />}
-                          {att.type === "document" && <FileText size={20} className="text-blue-400" />}
+                          <FileText size={20} className="text-red-400" />
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{att.name || 'Untitled'}</p>
-                            {att.size && (
-                              <p className="text-xs text-gray-400">
-                                {typeof att.size === 'number' ? `${(att.size / 1024).toFixed(1)} KB` : att.size}
-                              </p>
-                            )}
+                            <p className="font-medium truncate">{att.name || 'Document'}</p>
+                            {sizeLabel && <p className="text-xs text-gray-400">{sizeLabel}</p>}
                           </div>
-                          <span className="text-xs text-gray-400">
-                            {att.type === "document" && isUploadedFile ? "Download" : "Open"}
-                          </span>
+                          <span className="text-xs text-gray-400">View PDF</span>
                         </a>
                       );
-                    })}
-                </div>
-              )}
+                    }
+
+                    // All other files — download
+                    return (
+                      <a
+                        key={key}
+                        href={downloadUrl}
+                        download={att.name || 'file'}
+                        className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        <FileText size={20} className="text-blue-400" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{att.name || 'File'}</p>
+                          {sizeLabel && <p className="text-xs text-gray-400">{sizeLabel}</p>}
+                        </div>
+                        <span className="text-xs text-gray-400">Download</span>
+                      </a>
+                    );
+                  }
+
+                  // Legacy types (image/document) from old data — show as download
+                  if ((att.type === "image" || att.type === "document") && att.url) {
+                    return (
+                      <a
+                        key={key}
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={att.name || 'file'}
+                        className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        <FileText size={20} className="text-blue-400" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{att.name || 'File'}</p>
+                          {sizeLabel && <p className="text-xs text-gray-400">{sizeLabel}</p>}
+                        </div>
+                        <span className="text-xs text-gray-400">Download</span>
+                      </a>
+                    );
+                  }
+
+                  return null;
+                })}
+              </div>
             </div>
           )}
 
